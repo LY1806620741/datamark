@@ -31,7 +31,10 @@ jobs:
           cp -r docs/. _site/docs/
           touch _site/.nojekyll
 
-      - uses: actions/configure-pages@v5
+      - name: 探测 / 兜底开启 Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - uses: actions/upload-pages-artifact@v3
         with:
