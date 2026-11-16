@@ -484,7 +484,7 @@ function newVideoItem(name) {
 function newSeg(sp, sec, text) { return { id: uid(), sp: sp || '说话人', sec: Math.max(0, Math.round(sec || 0)), text: text || '', tr: '', mark: false }; }
 
 function seedDemo() {
-  const a = newAudioItem('示例 · 功能讲解录音.mp3', [
+  const a = newAudioItem('示例 · 功能讲解文稿（纯文稿，可练校对）', [
     newSeg('主持人', 0, '今天把这一版功能过一遍，重点看三处：导入、标注、导出。'),
     newSeg('讲解人', 32, '先说导入。文件拖进左侧栏目会按类型自动分流，音频进文稿，视频进画框。'),
     newSeg('讲解人', 65, '所有数据都存在本机浏览器里，没有后端，断网也能接着改。'),
