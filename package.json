@@ -1,0 +1,14 @@
+{
+  "name": "media-annotator",
+  "version": "1.0.0",
+  "private": true,
+  "description": "纯前端音视频标注台：录音文稿校对、视频划重点与打码、人工译文，无后端、无上传",
+  "scripts": {
+    "start": "node tests/server.mjs",
+    "test": "playwright test",
+    "test:headed": "playwright test --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.2"
+  }
+}
