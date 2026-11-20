@@ -24,8 +24,23 @@
 | 打码 | 真实马赛克像素化（非半透明块），按时间区间生效，可导出整段打码视频 |
 | 目录 | 连接本地目录后即时覆盖写入**唯一** `annotations.json`，并自动生成 `README.md` |
 | 只读包 | 导出独立 HTML（可内嵌媒体），对方双击即可看能播、但不改 |
+| 自带模型 | 可接本机 / 局域网的 OpenAI 兼容服务，做 AI 翻译与音频转写（可选） |
 
 ![视频划重点与打码](docs/video.png)
+
+## 接自己的模型（可选）
+
+不连模型也能用全部标注功能。想补「AI 翻译」和「转写」时，点右上「模型」填一个 **OpenAI 兼容**地址：
+
+| 你用的 | 地址填 |
+|---|---|
+| llama.cpp `llama-server` | `http://127.0.0.1:8080/v1` |
+| Ollama | `http://127.0.0.1:11434/v1` |
+| 局域网另一台机器 | `http://192.168.1.20:8080/v1` |
+
+点「测试连接」→ 保存，音频页的「AI 翻译 ▾ / 转写 ▾」就能用。模型跑在你自己的机器上，文字不出内网。
+
+连不上按顺序查：① 服务在跑、端口对；② CORS 放行本站来源（llama-server 默认 `--cors-origins *`，Ollama 需设 `OLLAMA_ORIGINS` 后重启）；③ 首次调用浏览器会问「允许访问本地网络」，点允许。用 `file://` 双击打开时多数浏览器禁止连本机服务，请用 https 或 localhost 打开。
 
 ## 目录与数据
 
@@ -56,10 +71,10 @@
 ```bash
 npm start                 # 零依赖静态服务，默认 4180
 npm install && npx playwright install chromium
-npm test                  # 9 条端到端用例
+npm test                  # 12 条端到端用例（含 mock 的 /v1 模型接口）
 ```
 
-推送到 `dev` 或 `main` 会自动跑 CI（`.github/workflows/ci.yml`）并用 `pages.yml` 发布 Pages（仓库 Settings → Pages → Source 需选 **GitHub Actions**）。
+推送 `dev` 会自动跑 CI（`.github/workflows/ci.yml`）并由 `pages.yml` 发布 Pages（Settings → Pages → Source 选 **GitHub Actions**）。
 
 ## License
 

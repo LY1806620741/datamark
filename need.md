@@ -17,6 +17,10 @@
    - **测试落进 GitHub Actions**，保证功能不出偏差；
    - 整理出 `need.md` 需求文档与面向使用者的 `readme.md`，讲清**隐私 / 无后端设计**；
    - 提交一版到 GitHub `dev` 分支并部署。
+5. 第二轮追加（模型接入）：
+   - 支持连接**本机 / 局域网**的私有模型，用于1) **页面翻译**：把文稿段落翻成译文并回填译文栏；2) **录音转文字**：把音频转成文稿段落。
+   - 不引入第三方 SDK，保持零依赖、可审计、断网可用的底线。
+   - 已明确：事实标准是 OpenAI Chat Completions（`POST /v1/chat/completions`、`GET /v1/models`），llama.cpp `llama-server`、Ollama（`localhost:11434/v1`）、LM Studio、vLLM 均兼容；转写走 `POST /v1/audio/transcriptions`。
 
 ## 二、功能落地
 
@@ -26,14 +30,18 @@
 | 视频划重点 | 画布拖框生成 `rect` 区域，带起止时间与说明文字；可导出截图（标注烧入） |
 | 视频打码 | 真实马赛克：离屏降采样 + 柔化，按区域大小自适应块径；区域有 `t0/t1`；可整片重绘导出 |
 | 纯前端 | 单文件 HTML，无任何网络请求、无第三方依赖；数据存 IndexedDB 或用户目录 |
-| 人工翻译 | 每段 `tr` 译文栏 + 双语对照视图 + 双语 SRT 导出（不做机器翻译） |
+| 人工翻译 | 每段 `tr` 译文栏 + 双语对照视图 + 双语 SRT 导出 |
+| 本机/局域网模型 | 右上「模型」面板配置 OpenAI 兼容地址（自动补 `/v1`）、可选 API Key、拉取模型列表、测试连接、配置存 localStorage；仅约 40 行 `fetch`，无第三方库 |
+| AI 翻译（可选） | 音频页「AI 翻译 ▾」：翻译空译文（保留已改）/ 全部重译 / 只翻当前筛选 / 只翻 ★ 段；每批 ≤12 段，要求模型只回 JSON，按序号回填 `tr` |
+| 转写（可选） | 音频页「转写 ▾」：把音频 POST 到 `/audio/transcriptions`（`verbose_json` + 段级时间戳，400 时降级 `json`），按 segments 建段，可替换或追加（保留原说话人） |
+| 内网安全 | https 公网页访问本机/局域网时带 `targetAddressSpace:'local'`，兼容 Chrome 142+ 本地网络权限；文案明确 CORS / `OLLAMA_ORIGINS` / file:// 限制 |
 | 隐私脱敏 | 标题通用化、示例数据为通用功能讲解会议、无案号/姓名/公司/钱包/git hash；仓库内同为示例数据 |
 | 首次引导 | 三步聚光灯引导（导入 → 标注 → 导出），首次自动出现，完成后写入 localStorage，不再打扰；右上「引导」可重放 |
 | 目录标注 + 即时写入 | `showDirectoryPicker` 授权目录 → 扫描媒体 → 恢复 `annotations.json` → 每次改动防抖 1.2s 覆盖写入同一文件；`pagehide`/`visibilitychange` 立即落盘 |
 | 单一数据文件 | 目录里只维护 `annotations.json`（+ 自动生成的 `README.md`），不产生每项一文件的碎片 |
 | 只读预览包 | 用"页面初始模板 + 内嵌 JSON + data URL 媒体"生成独立 HTML：`__BUNDLE__` 模式启动，隐藏全部编辑入口、字段只读、可播放可看标注 |
 | GitHub Pages | `pages.yml` 打包 `index.html` + 文档到 `_site` 后发布 |
-| GitHub Actions 测试 | `ci.yml` 跑 Playwright 端到端 9 条用例 |
+| GitHub Actions 测试 | `ci.yml` 跑 Playwright 端到端 12 条用例（含 mock 的 `/v1` 模型接口） |
 
 ## 三、验收标准
 
@@ -46,11 +54,16 @@
 - [x] 目录连接后只出现 `README.md` + `annotations.json` 两个文件，编辑后内容即时更新
 - [x] 只读预览包离线可打开、无编辑入口、`contenteditable=false`、媒体可播
 - [x] 项目 JSON 往返后项数与项目名一致
-- [x] CI 全绿（9/9）
+- [x] 模型面板：测试连接成功、模型列表进入 datalist、保存后刷新仍生效
+- [x] AI 翻译：空译文被回填、已有译文不被覆盖、结果写回项目数据
+- [x] 转写：音频转成段落并替换原段落（说话人沿用原下标）
+- [x] 只读预览包隐藏「模型 / AI 翻译 / 转写」入口
+- [x] CI 全绿（12/12）
 
 ## 四、边界与非目标
 
-- 不做机器翻译、不做语音识别（只做人工标注与校对）。
+- 不内置任何模型权重、不代跑推理：机器翻译与语音识别**可选**，需用户自备本机/局域网 OpenAI 兼容服务；没连模型时全部标注功能照旧可用。
+- 浏览器限制需用户侧配合：Ollama 默认只放行 localhost 来源（需设 `OLLAMA_ORIGINS`）；`file://` 打开时多数浏览器禁止连本机服务。
 - 打码为静态矩形，不做逐帧目标跟踪；移动中的敏感信息需多打几段框。
 - 不做账号、协作、云同步、服务端存储。
 - 只读包内嵌媒体上限 80MB，超出则不带媒体（标注仍可看）。
@@ -64,6 +77,8 @@
 3. **存储分层**：`Store` 抽象优先 IndexedDB（`kv` + `blob`），失败降级 localStorage；目录授权后可即时写盘。
 4. **只读包生成**：不在运行时抓取自身源码（`file://` 下不可靠），改为启动时捕获**未变更的模板 HTML**，导出时注入 `bundleData` 与 `__BUNDLE__` 标记，体积小、逻辑与主程序共用。
 5. **隐私优先**：无任何外链请求；示例数据通用化；只读包 `noindex`。
+6. **模型接入零依赖**：不引 `openai` / `ollama` / AI SDK，直接手写 `fetch` 调 `/v1`，既避免体积与供应链风险，也保证源码可审计、断网时不影响标注主流程。
+7. **模型能力可选挂载**：翻译只看 `seg.tr`，转写只写 `it.segments`，与既有数据模型完全复用，导出（JSON / 单文件目录 / 只读包）无需改动。
 
 ## 六、目录结构
 
@@ -74,8 +89,8 @@ media-annotator/
 ├── need.md                    # 本需求文档
 ├── docs/                      # README 截图
 ├── tests/
-│   ├── annotator.spec.js      # 9 条端到端用例
-│   ├── server.mjs             # 零依赖静态服务器
+│   ├── annotator.spec.js      # 12 条端到端用例
+│   ├── server.mjs             # 零依赖静态服务器 + 假 /v1 模型接口
 │   └── fixtures/demo.mp4      # 测试素材
 ├── playwright.config.js
 ├── package.json

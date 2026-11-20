@@ -258,6 +258,9 @@ test('只读预览包：离线打开、无编辑入口、可播放', async ({ pa
   await expect(page.locator('#btnImportMedia')).toBeHidden();
   await expect(page.locator('#aAddCur')).toBeHidden();
 
+  await expect(page.locator('#btnModel')).toBeHidden();
+  await expect(page.locator('#aTrans')).toBeHidden();
+  await expect(page.locator('#aAsr')).toBeHidden();
   await expect(page.locator('#aList .seg .txt').first()).toHaveAttribute('contenteditable', 'false');
   await page.locator('#itemList .item').nth(1).click();
   await expect(page.locator('#rgList .rg')).toHaveCount(1);
@@ -287,4 +290,73 @@ test('项目 JSON 往返：导出再导入项目与名称保持一致', async ({
   await page.waitForTimeout(600);
   await expect(page.locator('#itemList .item')).toHaveCount(2);
   await expect(page.locator('#projName')).toHaveValue('往返项目');
+});
+
+/* ---------- 本机 / 局域网模型（测试用 /v1 mock，见 tests/server.mjs） ---------- */
+
+const BASE = 'http://127.0.0.1:4180';
+
+async function connectMockModel(page) {
+  await page.locator('#btnModel').click();
+  await expect(page.locator('#lmModal')).toBeVisible();
+  await page.fill('#lmBase', BASE + '/v1');
+  await page.locator('#lmTest').click();
+  await expect(page.locator('#lmStat')).toContainText('连接正常', { timeout: 10000 });
+  await page.fill('#lmModel', 'mock-llama');
+  await page.locator('#lmSave').click();
+  await expect(page.locator('#lmModal')).toBeHidden();
+}
+
+test('模型面板：测试连接、拉取模型列表、保存后持久化', async ({ page }) => {
+  await openApp(page);
+  await connectMockModel(page);
+
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('annotator.lm.v1') || 'null'));
+  expect(saved.base).toBe(BASE + '/v1');
+  expect(saved.model).toBe('mock-llama');
+
+  // 拉取模型列表：回车到 datalist，供手填时选
+  await expect(page.locator('#lmModelList option')).toHaveCount(2);
+
+  await page.reload();
+  await expect(page.locator('#itemList .item')).toHaveCount(2);
+  await page.locator('#btnModel').click();
+  await expect(page.locator('#lmBase')).toHaveValue(BASE + '/v1');
+  await expect(page.locator('#lmModel')).toHaveValue('mock-llama');
+});
+
+test('AI 翻译：把空译文回填到译文栏，并写回项目', async ({ page }) => {
+  await openApp(page);
+  await connectMockModel(page);
+
+  await page.locator('#aBi').check();
+  await page.locator('#aTrans').click();
+  await page.locator('.menu button', { hasText: '翻译空译文' }).click();
+
+  await expect(page.locator('#aList .seg .tr').first()).toContainText('MOCK:', { timeout: 15000 });
+  await expect(page.locator('#aList .seg .tr')).toHaveCount(8);
+
+  const trs = await page.evaluate(() => window.__ANNOTATOR__.project.items.find(i => i.kind === 'audio').segments.map(s => s.tr));
+  // 示例项目里第 3 段本来就有译文，应保留不被覆盖
+  expect(trs.filter(t => t && t.startsWith('MOCK:')).length).toBe(7);
+  expect(trs.filter(t => !t).length).toBe(0);
+});
+
+test('转写：音频经模型转成文稿段落（替换现有段落）', async ({ page }) => {
+  await openApp(page);
+  await connectMockModel(page);
+
+  // 给示例音频项挂一个可被 fetch 的 data URL，模拟「本机已有音频」
+  await page.evaluate(() => {
+    const it = window.__ANNOTATOR__.project.items.find(i => i.kind === 'audio');
+    it.mediaKey = null;
+    it.src = 'data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAAD';
+  });
+
+  await page.locator('#aAsr').click();
+  await page.locator('.menu button', { hasText: '替换现有段落' }).click();
+
+  await expect(page.locator('#aList .seg .txt')).toHaveCount(2, { timeout: 20000 });
+  await expect(page.locator('#aList .seg .txt').first()).toHaveText('转写一');
+  await expect(page.locator('#aList .seg .txt').nth(1)).toHaveText('转写二');
 });

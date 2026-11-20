@@ -176,6 +176,19 @@ main{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
 .modal li{margin-left:16px}
 .modal kbd{font-family:var(--mono);font-size:11px;background:#0d1016;border:1px solid var(--line2);border-bottom-width:2px;border-radius:3px;padding:0 5px;color:var(--tx)}
 .modal .close{float:right}
+/* ============ 本地模型面板 ============ */
+#lmModal .box{width:min(620px,100%)}
+.lmrow{display:grid;grid-template-columns:104px minmax(0,1fr);gap:10px;align-items:center;margin:9px 0}
+.lmrow>label{font-size:11.5px;color:var(--tx2)}
+.lmrow .inp{width:100%;min-width:0}
+.lmact{display:flex;gap:8px;align-items:center;margin-top:14px;flex-wrap:wrap}
+.lmstat{font-size:11.5px;color:var(--tx3);margin-top:10px;min-height:18px;white-space:pre-wrap;word-break:break-word}
+.lmstat.ok{color:var(--green)}
+.lmstat.err{color:var(--red)}
+.lmtip{font-size:11px;color:var(--tx3);margin-top:10px;line-height:1.75}
+.lmtip code{font-family:var(--mono);font-size:10.5px;color:var(--tx2)}
+.pstat.busy{color:var(--acc)}
+
 /* ============ 只读预览 / 新手引导 ============ */
 .ro-band{position:fixed;top:54px;left:0;right:0;height:26px;display:none;align-items:center;justify-content:center;gap:8px;background:#16242c;color:#9ed0d9;font-size:11.5px;border-bottom:1px solid #2b464c;z-index:20;letter-spacing:.2px}
 body.ro .ro-band{display:flex}
@@ -206,7 +219,7 @@ body.ro .seg .txt,body.ro .seg .trt{color:var(--tx)}
       <rect x="2.5" y="6" width="14" height="12" rx="2"/><path d="M16.5 10.5 21 8v8l-4.5-2.5"/>
     </svg>
     <h1>音视频标注台</h1>
-    <span class="tag">v1.0 · 纯前端 · 无后端</span>
+    <span class="tag">v1.1 · 纯前端 · 无后端</span>
   </div>
   <div class="proj">
     <span class="lbl">项目</span>
@@ -219,6 +232,7 @@ body.ro .seg .txt,body.ro .seg .trt{color:var(--tx)}
     <button class="btn gho edit-only" id="btnAddVideo">新建画框项</button>
     <button class="btn gho edit-only" id="btnImportJson">导入标注</button>
     <button class="btn gho edit-only" id="btnExportAll">导出标注</button>
+    <button class="btn gho edit-only" id="btnModel" title="连接本机 / 局域网私有模型（OpenAI 兼容）：翻译与转写">模型</button>
     <button class="btn gho edit-only" id="btnGuide" title="新手引导">引导</button>
     <button class="btn gho" id="btnHelp" title="使用说明与快捷键">?</button>
   </div>
@@ -280,7 +294,10 @@ body.ro .seg .txt,body.ro .seg .trt{color:var(--tx)}
     <h3>二、视频：划重点与打码</h3>
     <p>选中「划重点」或「打码」后用鼠标在画面上拖出一个框，即生成一条带时间范围的标注：框会从当前播放位置开始持续一段时常（默认 3 秒，可在右侧面板改写起止时间）。打码是真实马赛克像素化，不是半透明色块；画框项还没挂素材时，舞台里可以「载入本地视频到本项」，把文件挂到已有标注上（同尺寸素材坐标自动对齐）；也可以一键生成 8 秒演示片段先练手法。</p>
 
-    <h3>三、导出</h3>
+    <h3>三、接自己的模型（可选）</h3>
+    <p>右上「模型」可以连<b>本机或局域网</b>的 OpenAI 兼容服务（llama.cpp 的 llama-server、Ollama、LM Studio、vLLM 都算）：填地址（如 <kbd>http://127.0.0.1:8080/v1</kbd> 或 <kbd>http://192.168.1.20:8080/v1</kbd>），点「测试连接」，保存即可。之后音频页的「AI 翻译 ▾」把原文翻成译文并回填译文栏，「转写 ▾」把音频转成文稿段落（有 whisper 服务时按时间码分段）。模型跑在你自己机器上，文字不出内网；没连模型时工具照旧完全可用。</p>
+
+    <h3>四、导出</h3>
     <p>「导出标注」里推荐用<b>单一数据文件</b>：连了目录就直接写进 <kbd>annotations.json</kbd>，没连目录就下载一份 JSON（含全部文稿、标记、区域坐标，不含媒体本体）。另有<b>只读预览 HTML</b>：把数据（可选内嵌媒体）打包成一个独立文件，别人双击就能看、能播，但改不了，适合发给同事复核。</p>
     <p>文稿页还可以单独导出 TXT / SRT（原文或双语）/ Markdown，视频页可导出当前帧截图和打码视频。</p>
     <p>「导出打码视频」是按 30fps 逐帧重绘并实时录制成新文件，优先写 MP4（时长与索引完整），浏览器不支持时退到 WebM 并自动补写时长信息。录制耗时约等于片长，期间不要切走标签页；导出的是 VP9/Opus 编码，现代播放器可播，需要 H.264 时用本地转码工具再过一遍。</p>
@@ -291,6 +308,32 @@ body.ro .seg .txt,body.ro .seg .trt{color:var(--tx)}
     <h3>边界说明</h3>
     <p>打码是马赛克加柔化，强度随区域大小自适应，遮住小字比单纯画半透明色块可靠。区域是静态矩形，只在起止时间内生效；画面里会移动的敏感信息（滚动列表、运动中的人脸）需要沿时间轴多打几段框，本工具不做逐帧跟踪。</p>
     <p>音视频能否播放取决于浏览器对该编码的支持（建议 MP4/H.264、MP3、WAV）；画布录制导出是 Chrome / Edge 的能力。所有标注保存在本机浏览器，刷新或重开都还在，换机器请用 JSON 导出迁移。</p>
+  </div>
+</div>
+
+<div class="modal" id="lmModal" hidden>
+  <div class="box">
+    <button class="btn sm close" id="lmClose">关闭</button>
+    <h2>本机 / 局域网模型</h2>
+    <div class="sub">只要是 OpenAI 兼容服务就能接：llama.cpp（llama-server）、Ollama、LM Studio、vLLM 等。地址可填本机 <code>http://127.0.0.1:8080/v1</code>，也可填局域网 <code>http://192.168.1.20:8080/v1</code>。工具本身仍然零依赖、无后端。</div>
+
+    <div class="lmrow"><label>服务地址</label><input class="inp" id="lmBase" spellcheck="false" placeholder="http://127.0.0.1:8080/v1"></div>
+    <div class="lmrow"><label>API Key（可空）</label><input class="inp" id="lmKey" spellcheck="false" placeholder="留空则不带 Authorization"></div>
+    <div class="lmrow"><label>对话模型</label><input class="inp" id="lmModel" spellcheck="false" list="lmModelList" placeholder="留空就用列表里的第一个"><datalist id="lmModelList"></datalist></div>
+    <div class="lmrow"><label>转写模型</label><input class="inp" id="lmAsrModel" spellcheck="false" placeholder="whisper-1"></div>
+    <div class="lmrow"><label>转写语言（可空）</label><input class="inp" id="lmAsrLang" spellcheck="false" placeholder="zh / en，留空由模型自判"></div>
+    <div class="lmrow"><label>译文语言</label><select class="inp" id="lmLang">
+      <option value="zh">简体中文</option><option value="en">English</option><option value="ja">日本語</option><option value="ko">한국어</option>
+    </select></div>
+
+    <div class="lmact">
+      <button class="btn sm" id="lmRefresh">拉取模型列表</button>
+      <button class="btn sm" id="lmTest">测试连接</button>
+      <span class="grow"></span>
+      <button class="btn pri" id="lmSave">保存</button>
+    </div>
+    <div class="lmstat" id="lmStat"></div>
+    <p class="lmtip">连不上时依次查三件事：① 服务是否在跑、端口对不对（llama-server 默认 8080，Ollama 是 11434）；② <b>CORS</b> 是否放行本站来源（llama-server 默认 <code>--cors-origins *</code>，Ollama 需设 <code>OLLAMA_ORIGINS</code> 后重启）；③ 首次调用时浏览器会弹「允许访问本地网络」，点允许。用 <code>file://</code> 双击打开时多数浏览器禁止连本机服务，请用 https 或 <code>http://localhost</code> 打开本工具。</p>
   </div>
 </div>
 
@@ -700,6 +743,350 @@ async function attachMediaFile(item, file, keepName) {
 function stripExt(n) { return String(n).replace(/\.[^.]+$/, ''); }
 
 /* ============================================================
+   3.5 本机 / 局域网模型（OpenAI 兼容，零依赖 fetch）
+   —— 只把「段落原文」或「当前音频」发给你自己填的那个地址，
+      不经过任何第三方；没配置时整个功能不可见也不联网。
+============================================================ */
+const LM_KEY = 'annotator.lm.v1';
+const LANG_NAME = { zh: '简体中文', en: 'English', ja: '日本語', ko: '한국어' };
+let LM = { base: '', key: '', model: '', asr: 'whisper-1', asrLang: '', lang: 'zh' };
+function loadLM() {
+  try {
+    const v = JSON.parse(localStorage.getItem(LM_KEY) || 'null');
+    if (v && typeof v === 'object') LM = Object.assign({}, LM, v);
+  } catch (e) { }
+}
+function saveLM() {
+  try { localStorage.setItem(LM_KEY, JSON.stringify(LM)); } catch (e) { }
+}
+loadLM();
+
+function lmReady() { return !!LM.base && !RO; }
+/* 允许只写主机加端口：自动补 /v1 */
+function lmBase() {
+  let b = String(LM.base || '').trim().replace(/\/+$/, '');
+  if (!b) return '';
+  if (!/\/v\d+\b/i.test(b)) b += '/v1';
+  return b;
+}
+function isLanHost(u) {
+  try {
+    const h = new URL(u, location.href).hostname.toLowerCase();
+    return h === 'localhost' || h === '127.0.0.1' || h === '::1' || h === '[::1]' ||
+      /^10\./.test(h) || /^192\.168\./.test(h) || /^169\.254\./.test(h) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(h) || h.endsWith('.local');
+  } catch (e) { return false; }
+}
+function lmErrText(err, url) {
+  const m = String(err && err.message || err || '');
+  if (/abort/i.test(m)) return '请求被取消或超时';
+  if (/Failed to fetch|NetworkError|Load failed|network/i.test(m)) {
+    return '连不上服务（' + url + '）。常见原因：服务没启动 / 端口不对 / CORS 未放行本站来源 / 浏览器「本地网络访问」权限被拒。\n详见「模型」面板底部的排查清单。';
+  }
+  return m || '未知错误';
+}
+async function lmFetch(path, opts, timeoutMs) {
+  const base = lmBase();
+  if (!base) throw new Error('还没有填写服务地址');
+  const url = base + path;
+  const ctrl = new AbortController();
+  LM.ctrl = ctrl;
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs || 120000);
+  const headers = Object.assign({}, (opts && opts.headers) || {});
+  if (LM.key) headers['Authorization'] = 'Bearer ' + LM.key;
+  const init = Object.assign({}, opts || {}, { headers, signal: ctrl.signal });
+  /* https 页面访问本机/局域网明文 http：Chrome 142+ 需「本地网络访问」授权，
+     声明 targetAddressSpace 后不再按混合内容拦截（其他浏览器会忽略这个字段） */
+  try { if (location.protocol === 'https:' && isLanHost(url)) init.targetAddressSpace = 'local'; } catch (e) { }
+  let res;
+  try {
+    res = await fetch(url, init);
+  } catch (e) {
+    clearTimeout(timer);
+    throw new Error(lmErrText(e, base));
+  }
+  clearTimeout(timer);
+  if (!res.ok) {
+    let detail = '';
+    try { const t = await res.text(); detail = t.slice(0, 300); } catch (e) { }
+    if (res.status === 401 || res.status === 403) throw new Error('服务拒绝访问（' + res.status + '）：检查 API Key 是否填对、服务是否要求鉴权');
+    if (res.status === 404) throw new Error('接口 404：地址可能少了 /v1，或该服务没有这个接口（转写需要 whisper 服务端支持 /audio/transcriptions）');
+    throw new Error('服务返回 ' + res.status + (detail ? '：' + detail : ''));
+  }
+  return res;
+}
+
+/* ---------- 模型面板 ---------- */
+function lmStatus(msg, kind) {
+  const el = $('#lmStat');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.className = 'lmstat' + (kind ? ' ' + kind : '');
+}
+function openLM() {
+  if (RO) return;
+  $('#lmBase').value = LM.base || 'http://127.0.0.1:8080/v1';
+  $('#lmKey').value = LM.key || '';
+  $('#lmModel').value = LM.model || '';
+  $('#lmAsrModel').value = LM.asr || 'whisper-1';
+  $('#lmAsrLang').value = LM.asrLang || '';
+  $('#lmLang').value = LM.lang || 'zh';
+  lmStatus(LM.base ? '当前：' + lmBase() : '还没连过模型。填好地址点「测试连接」。');
+  $('#lmModal').hidden = false;
+  setTimeout(() => { try { $('#lmBase').focus(); } catch (e) { } }, 30);
+}
+function readLmForm() {
+  LM.base = ($('#lmBase').value || '').trim();
+  LM.key = ($('#lmKey').value || '').trim();
+  LM.model = ($('#lmModel').value || '').trim();
+  LM.asr = ($('#lmAsrModel').value || '').trim() || 'whisper-1';
+  LM.asrLang = ($('#lmAsrLang').value || '').trim();
+  LM.lang = $('#lmLang').value || 'zh';
+  return LM;
+}
+async function lmModels(quiet) {
+  const res = await lmFetch('/models', { method: 'GET' }, 20000);
+  const js = await res.json();
+  const arr = (js && (js.data || js.models)) || [];
+  const ids = arr.map(o => (typeof o === 'string' ? o : (o.id || o.name || o.model))).filter(Boolean);
+  const dl = $('#lmModelList');
+  if (dl) dl.innerHTML = ids.map(v => '<option value="' + esc(v) + '">').join('');
+  if (!LM.model && ids.length) { LM.model = ids[0]; if ($('#lmModel')) $('#lmModel').value = ids[0]; }
+  if (!quiet) lmStatus(ids.length ? ('连接正常，' + ids.length + ' 个模型：' + ids.slice(0, 4).join('、') + (ids.length > 4 ? ' …' : '')) : '连接正常，但服务没有返回模型列表（可直接手填模型名）', 'ok');
+  return ids;
+}
+async function lmTest() {
+  readLmForm();
+  if (!LM.base) { lmStatus('先填服务地址', 'err'); return; }
+  lmStatus('连接中…');
+  try {
+    const ids = await lmModels(true);
+    saveLM();
+    lmStatus('连接正常 · ' + (ids.length ? ids.length + ' 个模型：' + ids.slice(0, 4).join('、') : '未返回模型列表，用默认名即可'), 'ok');
+  } catch (e) {
+    lmStatus(String(e.message || e), 'err');
+  }
+}
+
+/* ---------- 通用进度 ---------- */
+function lmProg(msg, busy) {
+  const el = $('#lmProg');
+  if (el) { el.textContent = msg || ''; el.classList.toggle('busy', !!busy); }
+  ['#aTrans', '#aAsr'].forEach(sel => { const b = $(sel); if (b) b.disabled = !!busy; });
+}
+function lmNeedConfig() {
+  if (!LM.base) { openLM(); toast('先连上模型：填服务地址后点「测试连接」'); return true; }
+  return false;
+}
+
+/* ---------- 翻译：逐段回填译文 ---------- */
+function chunkArr(a, n) { const out = []; for (let i = 0; i < a.length; i += n) out.push(a.slice(i, i + n)); return out; }
+function extractJson(txt) {
+  let t = String(txt || '').trim();
+  t = t.replace(/^```+\s*/i, '').replace(/```+$/i, '').trim();
+  const s = t.indexOf('{'), e = t.lastIndexOf('}');
+  if (s >= 0 && e > s) t = t.slice(s, e + 1);
+  try { return JSON.parse(t); } catch (err) { }
+  const as = t.indexOf('['), ae = t.lastIndexOf(']');
+  if (as >= 0 && ae > as) { try { return JSON.parse(t.slice(as, ae + 1)); } catch (err) { } }
+  return null;
+}
+async function translateItem(it, opt) {
+  if (RO || !it || it.kind !== 'audio') return;
+  if (lmNeedConfig()) return;
+  const o = Object.assign({ onlyEmpty: true, scope: 'all' }, opt || {});
+  const all = it.segments.slice().sort((a, b) => a.sec - b.sec);
+  let list = all;
+  if (o.scope === 'mark') list = all.filter(s => s.mark);
+  if (o.scope === 'view' && $('#aList')) list = filteredSegs(it);
+  if (o.onlyEmpty) list = list.filter(s => !(s.tr || '').trim());
+  list = list.filter(s => (s.text || '').trim());
+  if (!list.length) { toast(o.onlyEmpty ? '没有需要翻译的空译文段（可改用「全部重译」）' : '没有可翻译的段落'); return; }
+
+  LM.cancel = false;
+  const tgt = LANG_NAME[LM.lang] || '简体中文';
+  const sys = '你是专业字幕翻译。把用户给出的 JSON 数组里每一项的 t 翻译成' + tgt +
+    '。保持 i 与原文一一对应，逐条完整翻译，不合并、不省略、不加解释。只输出 JSON：{"items":[{"i":序号,"tr":"译文"}]}';
+  const batches = chunkArr(list, 12);
+  let done = 0, ok = 0, fail = 0;
+  try {
+    for (let bi = 0; bi < batches.length; bi++) {
+      if (LM.cancel) { toast('已停止翻译'); break; }
+      const batch = batches[bi];
+      lmProg('翻译中 ' + done + '/' + list.length + ' 段…', true);
+      const payload = batch.map((s, k) => ({ i: k, t: (s.text || '').trim() }));
+      let out = null, lastErr = null;
+      for (let attempt = 0; attempt < 2 && !out; attempt++) {
+        try {
+          const res = await lmFetch('/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: LM.model || 'default',
+              temperature: 0.2,
+              stream: false,
+              messages: [
+                { role: 'system', content: sys },
+                { role: 'user', content: JSON.stringify(payload) }
+              ]
+            })
+          }, 180000);
+          const js = await res.json();
+          const txt = (((js.choices || [])[0] || {}).message || {}).content || ((js.choices || [])[0] || {}).text || (js.message || {}).content || '';
+          out = extractJson(txt);
+          if (!out && attempt === 1) lastErr = new Error('模型没有返回可解析的 JSON');
+        } catch (e) { lastErr = e; if (String(e.message || '').indexOf('连不上') >= 0) throw e; }
+      }
+      if (!out) { fail += batch.length; done += batch.length; continue; }
+      const items = Array.isArray(out) ? out : (out.items || out.data || []);
+      items.forEach((row, k) => {
+        const idx = Number(row && (row.i != null ? row.i : k));
+        const seg = batch[idx];
+        const tr = String((row && (row.tr || row.translation || row.text)) || '').trim();
+        if (seg && tr) { seg.tr = tr; ok++; }
+      });
+      done += batch.length;
+      renderSegs(); queueSave();
+    }
+    const msg = '翻译完成：' + ok + ' 段' + (fail ? '，' + fail + ' 段模型没给译文（可重试）' : '');
+    toast(msg, 3600);
+    lmProg(fail ? ('翻译 ' + ok + ' 成功 / ' + fail + ' 失败') : ('已翻译 ' + ok + ' 段'), false);
+    renderSegs(); queueSave();
+    if (lastErr) console.warn('translate batch issue:', lastErr);
+  } catch (e) {
+    toast(String(e.message || e), 6000);
+    lmProg('翻译失败', false);
+  } finally {
+    LM.cancel = false;
+    const el = $('#lmProg'); if (el) el.classList.remove('busy');
+    ['#aTrans', '#aAsr'].forEach(sel => { const b = $(sel); if (b) b.disabled = false; });
+  }
+}
+
+/* ---------- 转写：音频 → 文稿 ---------- */
+async function itemBlob(it) {
+  if (!it) return null;
+  if (it.mediaKey) { try { const b = await Store.get('blob', it.mediaKey); if (b) return b; } catch (e) { } }
+  if (it.src && /^data:|^blob:/i.test(it.src)) { try { const r = await fetch(it.src); return await r.blob(); } catch (e) { } }
+  return null;
+}
+function pickName(name, fallbackExt) {
+  const n = String(name || 'audio');
+  return /\.[a-z0-9]{2,5}$/i.test(n) ? n : (n + (fallbackExt || '.mp3'));
+}
+function splitSentences(txt, dur) {
+  const parts = String(txt || '').replace(/\s+/g, ' ').split(/(?<=[。！？!?])\s*/).map(x => x.trim()).filter(Boolean);
+  const total = dur && isFinite(dur) ? dur : parts.length * 4;
+  const per = parts.length ? total / parts.length : 0;
+  return parts.map((t, i) => ({ start: i * per, end: (i + 1) * per, text: t }));
+}
+async function transcribeItem(it, mode) {
+  if (RO || !it || it.kind !== 'audio') return;
+  if (lmNeedConfig()) return;
+  const blob = await itemBlob(it);
+  if (!blob) { toast('这一项还没有音频文件：先「载入 / 更换音频」，或连接目录后重试'); return; }
+  LM.cancel = false;
+  lmProg('转写中…（长音频要等一会儿）', true);
+  try {
+    const fd = new FormData();
+    fd.append('file', blob, pickName(it.name, '.mp3'));
+    fd.append('model', LM.asr || 'whisper-1');
+    fd.append('response_format', 'verbose_json');
+    fd.append('timestamp_granularities[]', 'segment');
+    if (LM.asrLang) fd.append('language', LM.asrLang);
+    let js = null, err = null;
+    for (let attempt = 0; attempt < 2 && !js; attempt++) {
+      try {
+        const res = await lmFetch('/audio/transcriptions', { method: 'POST', body: fd }, 900000);
+        js = await res.json();
+      } catch (e) {
+        err = e;
+        if (attempt === 0 && /400/.test(String(e.message || ''))) {
+          const fd2 = new FormData();
+          fd2.append('file', blob, pickName(it.name, '.mp3'));
+          fd2.append('model', LM.asr || 'whisper-1');
+          fd2.append('response_format', 'json');
+          if (LM.asrLang) fd2.append('language', LM.asrLang);
+          try {
+            const r2 = await lmFetch('/audio/transcriptions', { method: 'POST', body: fd2 }, 900000);
+            js = await r2.json();
+            err = null;
+          } catch (e2) { err = e2; }
+        } else break;
+      }
+    }
+    if (!js) throw err || new Error('转写接口没有返回结果');
+    let parts = Array.isArray(js.segments) && js.segments.length
+      ? js.segments.map(x => ({ start: Number(x.start) || 0, end: Number(x.end) || 0, text: String(x.text || '').trim() })).filter(x => x.text)
+      : splitSentences(js.text || js.transcription || '', isFinite(audioEl.duration) ? audioEl.duration : 0);
+    if (!parts.length) { toast('模型没有识别出文字'); lmProg('转写完成：0 段'); return; }
+    const old = it.segments || [];
+    const segs = parts.map((p, i) => {
+      const sp = (mode === 'replace' && old[i] && old[i].sp) ? old[i].sp : (old[old.length - 1] && mode === 'append' ? old[old.length - 1].sp : '说话人');
+      return newSeg(sp, Math.round(p.start), p.text);
+    });
+    if (mode === 'append' && old.length) it.segments = old.concat(segs);
+    else it.segments = segs;
+    renderSegs(); queueSave();
+    toast('转写完成：' + segs.length + ' 段' + (mode === 'append' ? '（已追加到末尾）' : ''), 3600);
+    lmProg('转写完成 ' + segs.length + ' 段', false);
+  } catch (e) {
+    toast(String(e.message || e), 7000);
+    lmProg('转写失败', false);
+  } finally {
+    LM.cancel = false;
+  }
+}
+
+/* ---------- 菜单 ---------- */
+function lmMenu(anchor, it) {
+  return menuAt(anchor, [{
+    title: '用「' + (LM.model || '当前模型') + '」翻译译文 · ' + (LANG_NAME[LM.lang] || '简体中文'),
+    items: [
+      { label: '翻译空译文（保留已改的译文）', fn: () => translateItem(it, { onlyEmpty: true, scope: 'all' }) },
+      { label: '全部重译（覆盖现有译文）', fn: () => translateItem(it, { onlyEmpty: false, scope: 'all' }) },
+      { label: '只翻当前筛选结果', fn: () => translateItem(it, { onlyEmpty: true, scope: 'view' }) },
+      { label: '只翻 ★ 标注段', fn: () => translateItem(it, { onlyEmpty: true, scope: 'mark' }) }
+    ]
+  }, {
+    items: [
+      { label: '停止当前模型任务', fn: () => { LM.cancel = true; try { LM.ctrl && LM.ctrl.abort(); } catch (e) { } toast('已请求停止'); } },
+      { label: '模型设置…', fn: openLM }
+    ]
+  }], 'right');
+}
+function asrMenu(anchor, it) {
+  return menuAt(anchor, [{
+    title: '转写当前音频（' + (LM.asr || 'whisper-1') + '）',
+    items: [
+      { label: '转成文稿（替换现有段落）', fn: () => transcribeItem(it, 'replace') },
+      { label: '转成文稿（追加到末尾）', fn: () => transcribeItem(it, 'append') }
+    ]
+  }, {
+    items: [
+      { label: '停止当前模型任务', fn: () => { LM.cancel = true; try { LM.ctrl && LM.ctrl.abort(); } catch (e) { } toast('已请求停止'); } },
+      { label: '模型设置…', fn: openLM }
+    ]
+  }], 'right');
+}
+function bindLM() {
+  if (RO) return;
+  $('#btnModel').onclick = openLM;
+  $('#lmClose').onclick = () => { $('#lmModal').hidden = true; };
+  $('#lmModal').onclick = e => { if (e.target.id === 'lmModal') $('#lmModal').hidden = true; };
+  $('#lmRefresh').onclick = async () => {
+    readLmForm();
+    if (!LM.base) { lmStatus('先填服务地址', 'err'); return; }
+    lmStatus('拉取中…');
+    try { const ids = await lmModels(true); saveLM(); lmStatus(ids.length ? ('拿到 ' + ids.length + ' 个模型：' + ids.join('、')) : '服务没返回模型列表，可直接手填', ids.length ? 'ok' : ''); }
+    catch (e) { lmStatus(String(e.message || e), 'err'); }
+  };
+  $('#lmTest').onclick = lmTest;
+  $('#lmSave').onclick = () => { readLmForm(); saveLM(); $('#lmModal').hidden = true; toast(LM.base ? '模型已保存：' + lmBase() : '已清空模型配置'); };
+  $('#lmBase').onkeydown = e => { if (e.key === 'Enter') lmTest(); };
+}
+
+/* ============================================================
    4. 菜单 / 侧栏 / 视图分发
 ============================================================ */
 function closeMenu() { $$('.menu').forEach(m => m.remove()); }
@@ -861,6 +1248,7 @@ function buildAudioShell(it) {
           [0.5, 0.75, 1, 1.25, 1.5, 2].map(s => '<option value="' + s + '"' + (s === 1 ? ' selected' : '') + '>' + s + 'x</option>').join('') +
         '</select>' +
         '<span class="pstat" id="aStat"></span>' +
+        '<span class="pstat" id="lmProg"></span>' +
         '<button class="btn sm" id="aLoad">载入 / 更换音频</button>' +
       '</div>' +
       '<div class="trbar">' +
@@ -869,6 +1257,8 @@ function buildAudioShell(it) {
         '<label class="chk"><input type="checkbox" id="aBi"> 双语对照</label>' +
         '<label class="chk"><input type="checkbox" id="aFollow" checked> 跟随滚动</label>' +
         '<span class="grow"></span>' +
+        '<button class="btn sm edit-only" id="aTrans" title="用本机/局域网模型把原文翻成译文">AI 翻译 ▾</button>' +
+        '<button class="btn sm edit-only" id="aAsr" title="用本机/局域网模型把音频转成文稿">转写 ▾</button>' +
         '<button class="btn sm" id="aAddCur">＋ 当前位置加段</button>' +
         '<button class="btn sm" id="aExp" title="导出文稿 / 写盘">导出 ▾</button>' +
       '</div>' +
@@ -892,6 +1282,8 @@ function buildAudioShell(it) {
   $('#aFollow').onchange = () => { A.follow = $('#aFollow').checked; };
   $('#aAddCur').onclick = addSegAtCur;
   $('#aExp').onclick = e => menuAt(e.currentTarget, audioExportMenu(it), 'right');
+  if ($('#aTrans')) $('#aTrans').onclick = e => lmMenu(e.currentTarget, it);
+  if ($('#aAsr')) $('#aAsr').onclick = e => asrMenu(e.currentTarget, it);
   if (!RO) $('#aList').oncontextmenu = e => {
     const row = e.target.closest('.seg');
     if (!row) return;
@@ -2310,6 +2702,7 @@ function bindTop() {
       { label: '当前项 JSON', fn: () => { const it = active(); if (!it) return; download(new Blob([JSON.stringify(it, null, 2)], { type: 'application/json' }), safeName(it.name) + '.json'); } }
     ]
   }], 'right');
+  bindLM();
   $('#btnHelp').onclick = () => { $('#helpModal').hidden = false; };
   $('#helpClose').onclick = () => { $('#helpModal').hidden = true; };
   $('#helpModal').onclick = e => { if (e.target.id === 'helpModal') $('#helpModal').hidden = true; };
@@ -2321,7 +2714,7 @@ function bindTop() {
   document.addEventListener('keydown', e => {
     const tag = (e.target.tagName || '').toLowerCase();
     const editing = e.target.isContentEditable || tag === 'input' || tag === 'textarea' || tag === 'select';
-    if (e.key === 'Escape') { closeMenu(); $('#helpModal').hidden = true; return; }
+    if (e.key === 'Escape') { closeMenu(); $('#helpModal').hidden = true; if ($('#lmModal')) $('#lmModal').hidden = true; return; }
     if (editing) return;
     const it = active();
     if (!it) return;
@@ -2394,7 +2787,8 @@ async function boot() {
 }
 
 window.__ANNOTATOR__ = {
-  version: '1.0.0',
+  version: '1.1.0',
+  lm: { get config() { return LM; }, translateItem, transcribeItem, test: lmTest, models: lmModels },
   get project() { return P; },
   isRO: () => RO,
   buildReadOnlyHTML,
