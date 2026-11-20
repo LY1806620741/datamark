@@ -219,7 +219,7 @@ body.ro .seg .txt,body.ro .seg .trt{color:var(--tx)}
       <rect x="2.5" y="6" width="14" height="12" rx="2"/><path d="M16.5 10.5 21 8v8l-4.5-2.5"/>
     </svg>
     <h1>音视频标注台</h1>
-    <span class="tag">v1.1 · 纯前端 · 无后端</span>
+    <span class="tag">v1.2 · 纯前端 · 无后端</span>
   </div>
   <div class="proj">
     <span class="lbl">项目</span>
@@ -879,6 +879,16 @@ function lmNeedConfig() {
   return false;
 }
 
+/* 一键：转写 → 逐段翻译（一次点击从录音拿到双语） */
+async function transcribeAndTranslate(it, mode, opt) {
+  if (RO || !it || it.kind !== 'audio') return;
+  if (lmNeedConfig()) return;
+  const ok = await transcribeItem(it, mode || 'replace');
+  if (!ok || LM.cancel) return;
+  lmProg('转写完成，开始翻译…', true);
+  return translateItem(it, Object.assign({ onlyEmpty: false, scope: 'all' }, opt || {}));
+}
+
 /* ---------- 翻译：逐段回填译文 ---------- */
 function chunkArr(a, n) { const out = []; for (let i = 0; i < a.length; i += n) out.push(a.slice(i, i + n)); return out; }
 function extractJson(txt) {
@@ -984,7 +994,7 @@ async function transcribeItem(it, mode) {
   if (RO || !it || it.kind !== 'audio') return;
   if (lmNeedConfig()) return;
   const blob = await itemBlob(it);
-  if (!blob) { toast('这一项还没有音频文件：先「载入 / 更换音频」，或连接目录后重试'); return; }
+  if (!blob) { toast('这一项还没有音频文件：先「载入 / 更换音频」，或连接目录后重试'); return false; }
   LM.cancel = false;
   lmProg('转写中…（长音频要等一会儿）', true);
   try {
@@ -1019,7 +1029,7 @@ async function transcribeItem(it, mode) {
     let parts = Array.isArray(js.segments) && js.segments.length
       ? js.segments.map(x => ({ start: Number(x.start) || 0, end: Number(x.end) || 0, text: String(x.text || '').trim() })).filter(x => x.text)
       : splitSentences(js.text || js.transcription || '', isFinite(audioEl.duration) ? audioEl.duration : 0);
-    if (!parts.length) { toast('模型没有识别出文字'); lmProg('转写完成：0 段'); return; }
+    if (!parts.length) { toast('模型没有识别出文字'); lmProg('转写完成：0 段'); return false; }
     const old = it.segments || [];
     const segs = parts.map((p, i) => {
       const sp = (mode === 'replace' && old[i] && old[i].sp) ? old[i].sp : (old[old.length - 1] && mode === 'append' ? old[old.length - 1].sp : '说话人');
@@ -1030,9 +1040,11 @@ async function transcribeItem(it, mode) {
     renderSegs(); queueSave();
     toast('转写完成：' + segs.length + ' 段' + (mode === 'append' ? '（已追加到末尾）' : ''), 3600);
     lmProg('转写完成 ' + segs.length + ' 段', false);
+    return true;
   } catch (e) {
     toast(String(e.message || e), 7000);
     lmProg('转写失败', false);
+    return false;
   } finally {
     LM.cancel = false;
   }
@@ -1059,6 +1071,7 @@ function asrMenu(anchor, it) {
   return menuAt(anchor, [{
     title: '转写当前音频（' + (LM.asr || 'whisper-1') + '）',
     items: [
+      { label: '转写并翻译（一键出双语）', fn: () => transcribeAndTranslate(it, 'replace') },
       { label: '转成文稿（替换现有段落）', fn: () => transcribeItem(it, 'replace') },
       { label: '转成文稿（追加到末尾）', fn: () => transcribeItem(it, 'append') }
     ]
@@ -2787,8 +2800,8 @@ async function boot() {
 }
 
 window.__ANNOTATOR__ = {
-  version: '1.1.0',
-  lm: { get config() { return LM; }, translateItem, transcribeItem, test: lmTest, models: lmModels },
+  version: '1.2.0',
+  lm: { get config() { return LM; }, translateItem, transcribeItem, transcribeAndTranslate, test: lmTest, models: lmModels },
   get project() { return P; },
   isRO: () => RO,
   buildReadOnlyHTML,

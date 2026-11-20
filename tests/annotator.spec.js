@@ -360,3 +360,21 @@ test('转写：音频经模型转成文稿段落（替换现有段落）', async
   await expect(page.locator('#aList .seg .txt').first()).toHaveText('转写一');
   await expect(page.locator('#aList .seg .txt').nth(1)).toHaveText('转写二');
 });
+
+test('一键：转写并翻译，一次点击出双语文稿', async ({ page }) => {
+  await openApp(page);
+  await connectMockModel(page);
+  await page.evaluate(() => {
+    const it = window.__ANNOTATOR__.project.items.find(i => i.kind === 'audio');
+    it.mediaKey = null;
+    it.src = 'data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAAD';
+  });
+  await page.locator('#aBi').check();
+  await page.locator('#aAsr').click();
+  await page.locator('.menu button', { hasText: '转写并翻译' }).click();
+
+  await expect(page.locator('#aList .seg')).toHaveCount(2, { timeout: 20000 });
+  await expect(page.locator('#aList .seg .txt').first()).toHaveText('转写一');
+  await expect(page.locator('#aList .seg .tr').first()).toContainText('MOCK:', { timeout: 20000 });
+  await expect(page.locator('#aList .seg .tr').nth(1)).toContainText('MOCK:');
+});
