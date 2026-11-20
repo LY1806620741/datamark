@@ -378,3 +378,25 @@ test('一键：转写并翻译，一次点击出双语文稿', async ({ page }) 
   await expect(page.locator('#aList .seg .tr').first()).toContainText('MOCK:', { timeout: 20000 });
   await expect(page.locator('#aList .seg .tr').nth(1)).toContainText('MOCK:');
 });
+
+test('转写走独立的转写服务地址（与对话模型不同端口）', async ({ page }) => {
+  await openApp(page);
+  await page.locator('#btnModel').click();
+  await page.fill('#lmBase', 'http://127.0.0.1:9/v1');          // 对话模型故意指向死端口
+  await page.fill('#lmAsrBase', BASE + '/v1');                   // 转写走 mock
+  await page.fill('#lmAsrModel', 'whisper-1');
+  await page.fill('#lmModel', 'mock-llama');
+  await page.locator('#lmSave').click();
+
+  await page.evaluate(() => {
+    const it = window.__ANNOTATOR__.project.items.find(i => i.kind === 'audio');
+    it.mediaKey = null;
+    it.src = 'data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAAD';
+  });
+  await page.locator('#aAsr').click();
+  await page.locator('.menu button', { hasText: '替换现有段落' }).click();
+  await expect(page.locator('#aList .seg')).toHaveCount(2, { timeout: 20000 });
+
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('annotator.lm.v1') || 'null'));
+  expect(saved.asrBase).toBe(BASE + '/v1');
+});

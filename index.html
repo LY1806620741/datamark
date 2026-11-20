@@ -320,6 +320,7 @@ body.ro .seg .txt,body.ro .seg .trt{color:var(--tx)}
     <div class="lmrow"><label>服务地址</label><input class="inp" id="lmBase" spellcheck="false" placeholder="http://127.0.0.1:8080/v1"></div>
     <div class="lmrow"><label>API Key（可空）</label><input class="inp" id="lmKey" spellcheck="false" placeholder="留空则不带 Authorization"></div>
     <div class="lmrow"><label>对话模型</label><input class="inp" id="lmModel" spellcheck="false" list="lmModelList" placeholder="留空就用列表里的第一个"><datalist id="lmModelList"></datalist></div>
+    <div class="lmrow"><label>转写服务地址</label><input class="inp" id="lmAsrBase" spellcheck="false" placeholder="留空沿用上面的地址，如 http://127.0.0.1:8081/v1"></div>
     <div class="lmrow"><label>转写模型</label><input class="inp" id="lmAsrModel" spellcheck="false" placeholder="whisper-1"></div>
     <div class="lmrow"><label>转写语言（可空）</label><input class="inp" id="lmAsrLang" spellcheck="false" placeholder="zh / en，留空由模型自判"></div>
     <div class="lmrow"><label>译文语言</label><select class="inp" id="lmLang">
@@ -749,7 +750,7 @@ function stripExt(n) { return String(n).replace(/\.[^.]+$/, ''); }
 ============================================================ */
 const LM_KEY = 'annotator.lm.v1';
 const LANG_NAME = { zh: '简体中文', en: 'English', ja: '日本語', ko: '한국어' };
-let LM = { base: '', key: '', model: '', asr: 'whisper-1', asrLang: '', lang: 'zh' };
+let LM = { base: '', key: '', model: '', asr: 'whisper-1', asrBase: '', asrLang: '', lang: 'zh' };
 function loadLM() {
   try {
     const v = JSON.parse(localStorage.getItem(LM_KEY) || 'null');
@@ -763,8 +764,8 @@ loadLM();
 
 function lmReady() { return !!LM.base && !RO; }
 /* 允许只写主机加端口：自动补 /v1 */
-function lmBase() {
-  let b = String(LM.base || '').trim().replace(/\/+$/, '');
+function lmBase(raw) {
+  let b = String((raw === undefined ? LM.base : raw) || '').trim().replace(/\/+$/, '');
   if (!b) return '';
   if (!/\/v\d+\b/i.test(b)) b += '/v1';
   return b;
@@ -785,8 +786,8 @@ function lmErrText(err, url) {
   }
   return m || '未知错误';
 }
-async function lmFetch(path, opts, timeoutMs) {
-  const base = lmBase();
+async function lmFetch(path, opts, timeoutMs, rawBase) {
+  const base = lmBase(rawBase);
   if (!base) throw new Error('还没有填写服务地址');
   const url = base + path;
   const ctrl = new AbortController();
@@ -828,6 +829,7 @@ function openLM() {
   $('#lmBase').value = LM.base || 'http://127.0.0.1:8080/v1';
   $('#lmKey').value = LM.key || '';
   $('#lmModel').value = LM.model || '';
+  $('#lmAsrBase').value = LM.asrBase || '';
   $('#lmAsrModel').value = LM.asr || 'whisper-1';
   $('#lmAsrLang').value = LM.asrLang || '';
   $('#lmLang').value = LM.lang || 'zh';
@@ -839,6 +841,7 @@ function readLmForm() {
   LM.base = ($('#lmBase').value || '').trim();
   LM.key = ($('#lmKey').value || '').trim();
   LM.model = ($('#lmModel').value || '').trim();
+  LM.asrBase = ($('#lmAsrBase').value || '').trim();
   LM.asr = ($('#lmAsrModel').value || '').trim() || 'whisper-1';
   LM.asrLang = ($('#lmAsrLang').value || '').trim();
   LM.lang = $('#lmLang').value || 'zh';
@@ -1007,7 +1010,7 @@ async function transcribeItem(it, mode) {
     let js = null, err = null;
     for (let attempt = 0; attempt < 2 && !js; attempt++) {
       try {
-        const res = await lmFetch('/audio/transcriptions', { method: 'POST', body: fd }, 900000);
+        const res = await lmFetch('/audio/transcriptions', { method: 'POST', body: fd }, 900000, LM.asrBase || LM.base);
         js = await res.json();
       } catch (e) {
         err = e;
@@ -1018,7 +1021,7 @@ async function transcribeItem(it, mode) {
           fd2.append('response_format', 'json');
           if (LM.asrLang) fd2.append('language', LM.asrLang);
           try {
-            const r2 = await lmFetch('/audio/transcriptions', { method: 'POST', body: fd2 }, 900000);
+            const r2 = await lmFetch('/audio/transcriptions', { method: 'POST', body: fd2 }, 900000, LM.asrBase || LM.base);
             js = await r2.json();
             err = null;
           } catch (e2) { err = e2; }
@@ -2800,7 +2803,7 @@ async function boot() {
 }
 
 window.__ANNOTATOR__ = {
-  version: '1.2.0',
+  version: '1.2.1',
   lm: { get config() { return LM; }, translateItem, transcribeItem, transcribeAndTranslate, test: lmTest, models: lmModels },
   get project() { return P; },
   isRO: () => RO,

@@ -42,7 +42,8 @@
 
 - **AI 翻译 ▾**：把文稿原文翻成译文，回填译文栏（可只翻空译文、只翻 ★ 段）
 - **转写 ▾**：把音频转成文稿段落；其中**「转写并翻译」一次点击**就从录音拿到双语文稿
-- 转写需要一个 whisper 类服务（llama.cpp 只做 LLM 的话，另起 `whisper.cpp` / faster-whisper 的 OpenAI 兼容接口）
+- 转写需要 `/v1/audio/transcriptions`：`whisper.cpp server`、faster-whisper，或 llama-server 加载带音频编码器的模型（Qwen3-ASR / Voxtral / Qwen2-Audio，启动时要 `--mmproj`）
+- 转写服务可以和对话模型分开：面板里的「转写服务地址」留空则沿用主地址；两个服务不同端口时（如 8080 LLM / 8081 ASR）分别填
 
 模型跑在你自己机器上，文字不出内网。
 
