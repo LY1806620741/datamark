@@ -400,3 +400,33 @@ test('转写走独立的转写服务地址（与对话模型不同端口）', as
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('annotator.lm.v1') || 'null'));
   expect(saved.asrBase).toBe(BASE + '/v1');
 });
+
+test('界面语言：内置英文词条，文稿内容不动，切回中文完整还原', async ({ page }) => {
+  await openApp(page);
+  await page.locator('#btnLang').click();
+  await page.locator('.menu button', { hasText: 'EN' }).click();
+  await expect(page.locator('h1')).toHaveText('Annotator');
+  await expect(page.locator('#btnImportMedia')).toHaveText('Import');
+  await expect(page.locator('#aSearch')).toHaveAttribute('placeholder', 'Search text / translation / speaker');
+  await expect(page.locator('#aList .seg .txt').first()).toContainText('今天把这一版功能过一遍');
+
+  await page.locator('#btnLang').click();
+  await page.locator('.menu button', { hasText: '简体中文' }).click();
+  await expect(page.locator('h1')).toHaveText('音视频标注台');
+  await expect(page.locator('#btnImportMedia')).toHaveText('导入媒体');
+  await expect(page.locator('#btnLang')).toHaveText('中文');
+});
+
+test('界面翻译：非内置语言交给已配置的模型，结果缓存到下次打开', async ({ page }) => {
+  await openApp(page);
+  await connectMockModel(page);
+  await page.locator('#btnLang').click();
+  await page.locator('.menu button', { hasText: '日本語' }).click();
+  await expect(page.locator('h1')).toContainText('MOCK:', { timeout: 25000 });
+  await expect(page.locator('#btnImportMedia')).toContainText('MOCK:', { timeout: 25000 });
+  expect(await page.evaluate(() => Object.keys(window.__ANNOTATOR__.i18n.cache().ja || {}).length)).toBeGreaterThan(5);
+
+  await page.reload();
+  await expect(page.locator('#itemList .item')).toHaveCount(2);
+  await expect(page.locator('h1')).toContainText('MOCK:', { timeout: 15000 });
+});

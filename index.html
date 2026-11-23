@@ -219,7 +219,7 @@ body.ro .seg .txt,body.ro .seg .trt{color:var(--tx)}
       <rect x="2.5" y="6" width="14" height="12" rx="2"/><path d="M16.5 10.5 21 8v8l-4.5-2.5"/>
     </svg>
     <h1>音视频标注台</h1>
-    <span class="tag">v1.2 · 纯前端 · 无后端</span>
+    <span class="tag">v1.3 · 纯前端 · 无后端</span>
   </div>
   <div class="proj">
     <span class="lbl">项目</span>
@@ -232,6 +232,7 @@ body.ro .seg .txt,body.ro .seg .trt{color:var(--tx)}
     <button class="btn gho edit-only" id="btnAddVideo">新建画框项</button>
     <button class="btn gho edit-only" id="btnImportJson">导入标注</button>
     <button class="btn gho edit-only" id="btnExportAll">导出标注</button>
+    <button class="btn gho" id="btnLang" title="界面语言：中文 / English / 日本語 / 한국어（非中英需先连模型）">中文</button>
     <button class="btn gho edit-only" id="btnModel" title="连接本机 / 局域网私有模型（OpenAI 兼容）：翻译与转写">模型</button>
     <button class="btn gho edit-only" id="btnGuide" title="新手引导">引导</button>
     <button class="btn gho" id="btnHelp" title="使用说明与快捷键">?</button>
@@ -301,6 +302,9 @@ body.ro .seg .txt,body.ro .seg .trt{color:var(--tx)}
     <p>「导出标注」里推荐用<b>单一数据文件</b>：连了目录就直接写进 <kbd>annotations.json</kbd>，没连目录就下载一份 JSON（含全部文稿、标记、区域坐标，不含媒体本体）。另有<b>只读预览 HTML</b>：把数据（可选内嵌媒体）打包成一个独立文件，别人双击就能看、能播，但改不了，适合发给同事复核。</p>
     <p>文稿页还可以单独导出 TXT / SRT（原文或双语）/ Markdown，视频页可导出当前帧截图和打码视频。</p>
     <p>「导出打码视频」是按 30fps 逐帧重绘并实时录制成新文件，优先写 MP4（时长与索引完整），浏览器不支持时退到 WebM 并自动补写时长信息。录制耗时约等于片长，期间不要切走标签页；导出的是 VP9/Opus 编码，现代播放器可播，需要 H.264 时用本地转码工具再过一遍。</p>
+
+    <h3>四、界面语言</h3>
+    <p>右上角语言按钮可切中文 / English / 日本語 / 한국어。英文与常用中文词条是内置的，不连模型也能用；其他语言（以及界面上没覆盖的长文案）会交给「模型」里配置的那个服务翻译，结果缓存在本机，下次打开直接生效。只翻界面文案，你的文稿、文件名、标注说明不会被翻译。</p>
 
     <h3>快捷键</h3>
     <p><kbd>空格</kbd> 播放 / 暂停　<kbd>←</kbd> <kbd>→</kbd> 后退 / 前进 2 秒　<kbd>M</kbd> 在当前位置加标记　<kbd>Esc</kbd> 关闭菜单</p>
@@ -1100,6 +1104,265 @@ function bindLM() {
   $('#lmTest').onclick = lmTest;
   $('#lmSave').onclick = () => { readLmForm(); saveLM(); $('#lmModal').hidden = true; toast(LM.base ? '模型已保存：' + lmBase() : '已清空模型配置'); };
   $('#lmBase').onkeydown = e => { if (e.key === 'Enter') lmTest(); };
+}
+
+
+/* ============================================================
+   3.6 界面语言（内置中英词条；其他语言用已配置的模型补译并缓存）
+   —— 只翻界面文案，不动你的文稿、文件名、标注说明。
+============================================================ */
+const UI_LANG_KEY = 'annotator.lang.v1';
+const UI_CACHE_KEY = 'annotator.i18n.v1';
+const UI_LABEL = { zh: '中文', en: 'EN', ja: '日本語', ko: '한국어' };
+const UI_INLINE_MAX = 150; /* 超过这个长度的段落不送模型，避免又慢又贵 */
+const I18N_EN = {
+  '音视频标注台': 'Annotator',
+  '项目': 'Project',
+  '导入媒体': 'Import',
+  '连接目录': 'Open folder',
+  '新建文稿': 'New transcript',
+  '新建画框项': 'New canvas',
+  '导入标注': 'Import marks',
+  '导出标注': 'Export',
+  '模型': 'Model',
+  '引导': 'Guide',
+  '媒体 / 文稿': 'Media / Transcript',
+  '数据只保存在本机浏览器，不上传任何服务器。': 'Saved in this browser only — nothing is uploaded.',
+  '搜索原文 / 译文 / 说话人': 'Search text / translation / speaker',
+  '只看标注': 'Marked only',
+  '双语对照': 'Bilingual',
+  '跟随滚动': 'Follow',
+  '载入 / 更换音频': 'Load audio',
+  'AI 翻译 ▾': 'Translate ▾',
+  '转写 ▾': 'Transcribe ▾',
+  '+ 当前位置加段': '+ Add at cursor',
+  '导出 ▾': 'Export ▾',
+  '关闭': 'Close',
+  '保存': 'Save',
+  '测试连接': 'Test',
+  '拉取模型列表': 'List models',
+  '本机 / 局域网模型': 'Local / LAN model',
+  '服务地址': 'Endpoint',
+  'API Key（可空）': 'API key (optional)',
+  '对话模型': 'Chat model',
+  '转写服务地址': 'ASR endpoint',
+  '转写模型': 'ASR model',
+  '转写语言（可空）': 'ASR language',
+  '译文语言': 'Target language',
+  '使用说明': 'Help',
+  '界面语言': 'UI language',
+  '简体中文': 'Simplified Chinese',
+  '停止当前模型任务': 'Stop current task',
+  '模型设置…': 'Model settings…',
+  '翻译空译文（保留已改的译文）': 'Fill empty translations',
+  '全部重译（覆盖现有译文）': 'Retranslate all',
+  '只翻当前筛选结果': 'Translate filtered only',
+  '只翻 ★ 标注段': 'Translate starred only',
+  '转写并翻译（一键出双语）': 'Transcribe + translate',
+  '转成文稿（替换现有段落）': 'Transcribe (replace)',
+  '转成文稿（追加到末尾）': 'Transcribe (append)',
+  '用「': 'Using “',
+  '」翻译译文 · ': '” · ',
+  '只读': 'Read-only',
+  '已自动保存': 'Saved',
+  '已写入目录': 'Written to folder',
+  '＋ 当前位置加段': '＋ Add at cursor',
+  'v1.3 · 纯前端 · 无后端': 'v1.3 · pure front-end · no backend',
+  '数据只保存在本机浏览器，不上传任何服务器。媒体文件存在本地库中，刷新即可继续。': 'Saved in this browser only — nothing is uploaded. Media stays in the local store; reload to continue.',
+  '检测存储…': 'Checking storage…',
+  '没有符合筛选条件的段落': 'No segments match the filter',
+  '这一段还没有文稿': 'This item has no transcript yet'
+};
+let uiLang = 'zh';
+try { uiLang = localStorage.getItem(UI_LANG_KEY) || 'zh'; } catch (e) { }
+let i18nCache = {};
+try { i18nCache = JSON.parse(localStorage.getItem(UI_CACHE_KEY) || '{}') || {}; } catch (e) { i18nCache = {}; }
+const LANG_TRACK = new WeakMap(); /* 节点 -> { text:rec, attrs:{名字:rec} } 便于切回中文 */
+const LANG_RECS = [];             /* 已替换过的记录，切换语言时用来还原 */
+let langJob = 0, langPending = 0;
+
+function i18nSave() {
+  try {
+    const keep = {};
+    Object.keys(i18nCache).forEach(l => {
+      const m = i18nCache[l] || {};
+      const keys = Object.keys(m).slice(-400);
+      keep[l] = {};
+      keys.forEach(k => { keep[l][k] = m[k]; });
+    });
+    localStorage.setItem(UI_CACHE_KEY, JSON.stringify(keep));
+  } catch (e) { }
+}
+function i18nLookup(raw, lang) {
+  if (lang === 'en' && I18N_EN[raw]) return I18N_EN[raw];
+  const c = i18nCache[lang];
+  return (c && c[raw]) || null;
+}
+function i18nPut(raw, out, lang) {
+  if (!i18nCache[lang]) i18nCache[lang] = {};
+  i18nCache[lang][raw] = out;
+}
+function langSkip(el) {
+  return !el || !!el.closest('#aList,#itemList,#vCv,#bWrap,script,style,canvas,kbd,code,#projName,#toast,#lmProg,#aStat,#vStat,[contenteditable="true"],.seg');
+}
+function langBox(node, create) {
+  let box = LANG_TRACK.get(node);
+  if (!box && create) { box = { text: null, attrs: {} }; LANG_TRACK.set(node, box); }
+  return box || null;
+}
+function langRecall(node, attr) {
+  const box = langBox(node, false);
+  if (!box) return null;
+  return (attr ? box.attrs[attr] : box.text) || null;
+}
+function langRemember(node, attr, rec) {
+  const box = langBox(node, true);
+  if (attr) box.attrs[attr] = rec; else box.text = rec;
+  if (rec.__tracked) return;
+  rec.__tracked = 1;
+  LANG_RECS.push(rec);
+}
+function langSet(node, attr, out) {
+  if (attr) { node.setAttribute(attr, out); return; }
+  const m = /^(\s*)([\s\S]*?)(\s*)$/.exec(node.nodeValue || '');
+  node.nodeValue = (m ? m[1] : '') + out + (m ? m[3] : '');
+}
+function langCurrent(node, attr) { return attr ? node.getAttribute(attr) : node.nodeValue; }
+function langRestoreAll() {
+  LANG_RECS.forEach(rec => {
+    const node = rec.node;
+    if (!node || !node.isConnected) return;
+    if (rec.attr) node.setAttribute(rec.attr, rec.orig);
+    else node.nodeValue = rec.orig;
+  });
+  LANG_RECS.length = 0;
+}
+function langReady() { return uiLang !== 'zh' && (!!LM.base || uiLang === 'en'); }
+
+/* 收集本次需要翻译的文本：先查词条/缓存，命中就地替换，未命中攒成批次 */
+function langScan() {
+  const todo = [];
+  const store = (node, attr, raw) => {
+    const hit = i18nLookup(raw, uiLang);
+    if (!hit && raw.length > UI_INLINE_MAX) return;
+    if (hit) {
+      if (langCurrent(node, attr) === hit) return;
+      langRemember(node, attr, { node, attr, orig: langCurrent(node, attr), applied: hit });
+      langSet(node, attr, hit);
+      return;
+    }
+    todo.push({ node, attr, raw });
+  };
+  const nodes = [];
+  const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+    acceptNode(n) {
+      const p = n.parentElement;
+      if (!p || langSkip(p)) return NodeFilter.FILTER_REJECT;
+      const t = (n.nodeValue || '').trim();
+      if (!t) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
+  while (w.nextNode()) nodes.push(w.currentNode);
+  nodes.forEach(n => {
+    const rec = langRecall(n, null);
+    if (rec && n.nodeValue !== rec.orig && n.nodeValue !== rec.applied) { rec.orig = n.nodeValue; rec.applied = null; }
+    const raw = (rec ? rec.orig : n.nodeValue || '').trim();
+    if (!raw) return;
+    store(n, null, raw);
+  });
+  $$('[placeholder],[title]').forEach(el => {
+    if (langSkip(el)) return;
+    ['placeholder', 'title'].forEach(attr => {
+      const v = el.getAttribute(attr);
+      if (!v || !v.trim()) return;
+      store(el, attr, v.trim());
+    });
+  });
+  return todo;
+}
+
+function langApply(todo, results) {
+  todo.forEach((it, i) => {
+    const out = results[i];
+    if (!out) return;
+    const cur = langCurrent(it.node, it.attr);
+    langRemember(it.node, it.attr, { node: it.node, attr: it.attr, orig: cur, applied: out });
+    langSet(it.node, it.attr, out);
+    i18nPut(it.raw, out, uiLang);
+  });
+}
+
+async function langTranslateBatch(list) {
+  const user = JSON.stringify(list.map((x, i) => ({ i, t: x.raw })));
+  const body = {
+    model: LM.model || 'default', temperature: 0, stream: false,
+    messages: [
+      { role: 'system', content: '你是界面本地化翻译。把给定的界面文案逐条翻译成' + (LANG_NAME[uiLang] || uiLang) + '，按钮和标签用简短名词短语，不要加句号、不要解释、不要合并或省略。只输出 JSON：{"items":[{"i":序号,"tr":"译文"}]}' },
+      { role: 'user', content: user }
+    ]
+  };
+  const res = await lmFetch('/chat/completions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }, 90000);
+  const js = await res.json();
+  const msg = (js.choices && js.choices[0] && (js.choices[0].message || {})) || {};
+  const txt = msg.content || (js.message && js.message.content) || '';
+  const obj = extractJson(txt);
+  const arr = Array.isArray(obj) ? obj : (obj && (obj.items || obj.t)) || [];
+  return list.map((x, i) => {
+    const hit = arr.find(o => Number(o.i) === i);
+    return hit ? String(hit.tr || hit.t || '').trim() : '';
+  });
+}
+
+async function langPass() {
+  if (uiLang === 'zh') { langRestoreAll(); return; }
+  const todo = langScan();
+  if (!todo.length) return;
+  if (!LM.base) {
+    if (uiLang !== 'en' && !langPass._hinted) { langPass._hinted = 1; toast('界面翻译需要先在「模型」里连上服务（英文有内置词条）', 4000); }
+    return;
+  }
+  const job = ++langJob;
+  const queue = todo.slice(0, 96);
+  langPending = queue.length;
+  let done = 0;
+  for (let i = 0; i < queue.length; i += 12) {
+    if (job !== langJob || uiLang === 'zh') return;
+    const slice = queue.slice(i, i + 12);
+    try { langApply(slice, await langTranslateBatch(slice)); done += slice.length; }
+    catch (e) { /* 单批失败就跳过，界面保持中文 */ }
+  }
+  i18nSave();
+  langPending = 0;
+  if (done) toast('界面已本地化 ' + done + ' 条（已缓存，下次秒开）', 3600);
+}
+
+function langSchedule(ms) {
+  clearTimeout(langSchedule._t);
+  langSchedule._t = setTimeout(() => { if (uiLang !== 'zh') langPass(); }, ms || 200);
+}
+function setUILang(lang) {
+  if (uiLang === lang) return;
+  langPass._hinted = 0;
+  langRestoreAll();
+  uiLang = lang;
+  try { localStorage.setItem(UI_LANG_KEY, lang); } catch (e) { }
+  if ($('#btnLang')) $('#btnLang').textContent = UI_LABEL[lang];
+  if (lang === 'zh') { toast('界面已切回中文'); return; }
+  langPass();
+  toast('界面语言：' + (LANG_NAME[lang] || lang), 2200);
+}
+function langMenu(anchor) {
+  return menuAt(anchor, [{
+    title: '界面语言',
+    items: ['zh', 'en', 'ja', 'ko'].map(l => ({ label: UI_LABEL[l] + (l === 'zh' ? '（简体中文）' : ''), fn: () => setUILang(l) }))
+  }], 'right');
+}
+function bindLang() {
+  const b = $('#btnLang');
+  if (!b) return;
+  b.textContent = UI_LABEL[uiLang] || '中文';
+  b.onclick = e => langMenu(e.currentTarget);
 }
 
 /* ============================================================
@@ -2673,6 +2936,7 @@ function tick() {
 
 function bindTop() {
   $('#projName').oninput = e => { P.name = e.target.value.trim() || '未命名项目'; queueSave(); };
+  bindLang();
   $('#btnImportMedia').onclick = () => $('#fileMedia').click();
   $('#fileMedia').onchange = async e => {
     const files = Array.from(e.target.files || []);
@@ -2800,11 +3064,23 @@ async function boot() {
   requestAnimationFrame(tick);
   if (Store.mode === 'ls') toast('当前环境不支持 IndexedDB：标注会自动保存，媒体需每次重新导入', 5000);
   if (!guideSeen()) setTimeout(() => guideShow(0), 900);
+  startLangWatch();
+  if (uiLang !== 'zh') setTimeout(langPass, 350);
+}
+
+function startLangWatch() {
+  let t = 0;
+  new MutationObserver(() => {
+    if (uiLang === 'zh') return;
+    clearTimeout(t);
+    t = setTimeout(langPass, 200);
+  }).observe(document.body, { subtree: true, childList: true, characterData: true });
 }
 
 window.__ANNOTATOR__ = {
-  version: '1.2.1',
+  version: '1.3.0',
   lm: { get config() { return LM; }, translateItem, transcribeItem, transcribeAndTranslate, test: lmTest, models: lmModels },
+  i18n: { get lang() { return uiLang; }, setUILang, pass: langPass, dict: I18N_EN, cache: () => i18nCache },
   get project() { return P; },
   isRO: () => RO,
   buildReadOnlyHTML,
