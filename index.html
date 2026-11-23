@@ -1074,9 +1074,6 @@ function lmMenu(anchor, it) {
       { label: '模型设置…', fn: openLM }
     ]
   }], 'right');
-  /* 语言名保持原样（不翻），其余菜单项正常本地化 */
-  [].slice.call(m.querySelectorAll('button'), 0, 4).forEach(b => b.setAttribute('data-no-i18n', ''));
-  return m;
 }
 function asrMenu(anchor, it) {
   return menuAt(anchor, [{
@@ -1172,6 +1169,7 @@ const I18N_EN = {
   '模型设置…': 'Model settings…',
   '跟随浏览器（{x}）': 'Follow browser ({x})',
   '自定义语言…': 'Custom language…',
+  'AI 翻译…': 'AI translate…',
   '翻译空译文（保留已改的译文）': 'Fill empty translations',
   '全部重译（覆盖现有译文）': 'Retranslate all',
   '只翻当前筛选结果': 'Translate filtered only',
@@ -1386,14 +1384,14 @@ function langSchedule(ms) {
 }
 function setUILang(lang, label) {
   if (label) { uiLabels[lang] = label; uiSaveLabels(); }
-  if (uiLang === lang) { if ($('#btnLang')) $('#btnLang').textContent = uiLabel(lang); return; }
+  if (uiLang === lang) { bindLang(); return; }
   langPass._hinted = 0;
   langRestoreAll();
   uiLang = lang;
   pendingLang = '';
   try { localStorage.setItem(UI_LANG_KEY, lang); } catch (e) { }
   document.documentElement.lang = lang === 'zh' ? 'zh-CN' : lang;
-  if ($('#btnLang')) $('#btnLang').textContent = uiLabel(lang);
+  bindLang();
   if (lang === 'zh') { toast('界面已切回中文'); return; }
   if (UI_OFFLINE.indexOf(lang) < 0 && !LM.base) {
     toast('「' + uiLabel(lang) + '」需要先在「模型」里连上服务；连上后会自动切换', 4200);
@@ -1418,26 +1416,35 @@ function applyPendingLang() {
   pendingLang = '';
   setUILang(l, uiLabel(l));
 }
-function langMenu(anchor) {
+/* AI 档：有模型就翻（浏览器语言非中英时直接用它，否则让用户填一个语言名） */
+function aiLang() {
+  if (!LM.base) { openLM(); toast('AI 界面翻译要先连上模型', 3600); return; }
   const b = browserLang();
+  if (b && b !== 'zh' && b !== 'en' && b !== uiLang) { setUILang(b, uiLabel(b)); return; }
+  setCustomLang();
+}
+function langMenu(anchor) {
   const m = menuAt(anchor, [{
     title: '界面语言',
-    items: ['zh', 'en', 'ja', 'ko'].map(l => ({
-      label: uiLabel(l) + (UI_OFFLINE.indexOf(l) < 0 ? ' · 需模型' : ''),
-      fn: () => setUILang(l)
-    }))
-  }, {
     items: [
-      { label: '跟随浏览器（' + (UI_LABEL[b] || b) + '）', fn: followBrowserLang },
-      { label: '自定义语言…', fn: setCustomLang },
-      { label: '模型设置…', fn: openLM }
+      { label: '中文', fn: () => setUILang('zh') },
+      { label: 'English', fn: () => setUILang('en') },
+      { label: 'AI 翻译…', fn: aiLang }
     ]
   }], 'right');
+  Array.from(m.querySelectorAll('button')).slice(0, 2).forEach(b => b.setAttribute('data-no-i18n', ''));
+  return m;
+}
+function langShort(code) {
+  if (code === 'zh') return '中文';
+  if (code === 'en') return 'EN';
+  return 'AI';
 }
 function bindLang() {
   const b = $('#btnLang');
   if (!b) return;
-  b.textContent = uiLabel(uiLang);
+  b.textContent = langShort(uiLang);
+  b.title = (uiLang === 'en' ? 'UI language: ' : '界面语言：') + uiLabel(uiLang) + (uiLang === 'zh' || uiLang === 'en' ? '' : '（AI 翻译）');
   b.onclick = e => langMenu(e.currentTarget);
 }
 
@@ -1471,6 +1478,7 @@ function menuAt(anchor, groups, align) {
   let top = r.bottom + 6;
   if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
   m.style.left = left + 'px'; m.style.top = top + 'px';
+  return m;
 }
 document.addEventListener('mousedown', e => { if (!e.target.closest('.menu')) closeMenu(); });
 window.addEventListener('blur', closeMenu);
@@ -3154,7 +3162,7 @@ function startLangWatch() {
 }
 
 window.__ANNOTATOR__ = {
-  version: '1.3.0',
+  version: '1.3.1',
   lm: { get config() { return LM; }, translateItem, transcribeItem, transcribeAndTranslate, test: lmTest, models: lmModels },
   i18n: { get lang() { return uiLang; }, get label() { return uiLabel(uiLang); }, get pending() { return pendingLang; }, setUILang, setCustomLang, follow: followBrowserLang, pass: langPass, dict: I18N_EN, cache: () => i18nCache },
   get project() { return P; },

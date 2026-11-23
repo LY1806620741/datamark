@@ -420,11 +420,12 @@ test('界面语言：内置英文词条，文稿内容不动，切回中文完�
 test('界面翻译：非内置语言交给已配置的模型，结果缓存到下次打开', async ({ page }) => {
   await openApp(page);
   await connectMockModel(page);
+  page.once('dialog', d => d.accept('日本語'));
   await page.locator('#btnLang').click();
-  await page.locator('.menu button', { hasText: /^日本語/ }).click();
+  await page.locator('.menu button', { hasText: 'AI 翻译' }).click();
   await expect(page.locator('h1')).toContainText('MOCK:', { timeout: 25000 });
   await expect(page.locator('#btnImportMedia')).toContainText('MOCK:', { timeout: 25000 });
-  expect(await page.evaluate(() => Object.keys(window.__ANNOTATOR__.i18n.cache().ja || {}).length)).toBeGreaterThan(5);
+  expect(await page.evaluate(() => Object.keys(window.__ANNOTATOR__.i18n.cache()['日本語'] || {}).length)).toBeGreaterThan(5);
 
   await page.reload();
   await expect(page.locator('#itemList .item')).toHaveCount(2);
@@ -435,7 +436,7 @@ test.describe('界面语言 · 跟随浏览器与自定义', () => {
   test.use({ locale: 'en-US' });
   test('浏览器是英文时首访自动英文', async ({ page }) => {
     await openApp(page);
-    await expect(page.locator('#btnLang')).toHaveText('English');
+    await expect(page.locator('#btnLang')).toHaveText('EN');
     await expect(page.locator('h1')).toHaveText('Annotator');
     expect(await page.evaluate(() => window.__ANNOTATOR__.i18n.lang)).toBe('en');
   });
@@ -446,13 +447,13 @@ test('自定义语言：输入 Français 后由模型翻译界面并记住标签
   await connectMockModel(page);
   page.once('dialog', d => d.accept('Français'));
   await page.locator('#btnLang').click();
-  await page.locator('.menu button', { hasText: '自定义语言' }).click();
-  await expect(page.locator('#btnLang')).toHaveText('Français');
+  await page.locator('.menu button', { hasText: 'AI 翻译' }).click();
+  await expect(page.locator('#btnLang')).toHaveText('AI');
   await expect(page.locator('h1')).toContainText('MOCK:', { timeout: 25000 });
   expect(await page.evaluate(() => window.__ANNOTATOR__.i18n.lang)).toBe('Français');
 
   await page.reload();
   await expect(page.locator('#itemList .item')).toHaveCount(2);
-  await expect(page.locator('#btnLang')).toHaveText('Français');
+  await expect(page.locator('#btnLang')).toHaveText('AI');
   await expect(page.locator('h1')).toContainText('MOCK:', { timeout: 15000 });
 });

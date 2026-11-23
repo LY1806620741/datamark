@@ -38,7 +38,7 @@
 | 一键录音翻译（可选） | 「转写 ▾ → 转写并翻译」：先 ASR 出段落，再逐段 LLM 翻译，一次点击拿到双语文稿（`transcribeAndTranslate`） |
 | 双服务地址（可选） | 「转写服务地址」可空，留空沿用主地址；支持 LLM(8080) + ASR(8081) 分开部署 |
 | 转写（可选） | 音频页「转写 ▾」：把音频 POST 到 `/audio/transcriptions`（`verbose_json` + 段级时间戳，400 时降级 `json`），按 segments 建段，可替换或追加（保留原说话人） |
-| 界面语言（可选模型） | 右上语言按钮：跟随浏览器 / 中 / EN / 日 / 韩 / 自定义（prompt 输入任意语言名）；首访按 navigator.language 判定，非内置语言先中文并记下 pending，连上模型后自动切；中英内置词条表（约 50 条）→ 未命中且长度 ≤150 字的文案批量送模型翻译，结果按语言缓存到 localStorage；MutationObserver 在重渲染后自动补译；切回中文按原值还原 |
+| 界面语言（可选模型） | 右上语言按钮三档：中文 / English / AI 翻译（AI 档=模型翻译，浏览器语言非中英时直接用、否则 prompt 输入任意语言名）；首访按 navigator.language 判定，非内置语言先中文并记 pending，连上模型后自动切；中英内置词条表（约 50 条）→ 未命中且长度 ≤150 字的文案批量送模型翻译，结果按语言缓存到 localStorage；MutationObserver 在重渲染后自动补译；切回中文按原值还原 |
 | 内网安全 | https 公网页访问本机/局域网时带 `targetAddressSpace:'local'`，兼容 Chrome 142+ 本地网络权限；文案明确 CORS / `OLLAMA_ORIGINS` / file:// 限制 |
 | 隐私脱敏 | 标题通用化、示例数据为通用功能讲解会议、无案号/姓名/公司/钱包/git hash；仓库内同为示例数据 |
 | 首次引导 | 三步聚光灯引导（导入 → 标注 → 导出），首次自动出现，完成后写入 localStorage，不再打扰；右上「引导」可重放 |
