@@ -48,7 +48,15 @@
 
 模型跑在你自己机器上，文字不出内网。
 
-连不上按顺序查：① 服务在跑、端口对；② CORS 放行本站来源（llama-server 默认 `--cors-origins *`，Ollama 需设 `OLLAMA_ORIGINS` 后重启）；③ 首次调用浏览器会问「允许访问本地网络」，点允许。用 `file://` 双击打开时多数浏览器禁止连本机服务，请用 https 或 localhost 打开。
+连不上按顺序查：① 服务在跑、端口对；② CORS 放行本站来源（llama-server 默认 `--cors-origins *`，Ollama 需设 `OLLAMA_ORIGINS` 后重启）；③ 首次调用浏览器会问「允许访问本地网络」，点允许。
+
+**在线版连局域网模型会被拦**：线上页是 `https://`，浏览器禁止它请求 `http://192.168.x.x`（控制台报 `Mixed Content`），这不是工具的问题。三条路：
+
+- 把 `index.html` 存到本地，在该目录跑 `python3 -m http.server 8000`，用 `http://127.0.0.1:8000/index.html` 打开——页面变 HTTP，混合内容消失，选目录、连模型都正常（推荐）。
+- 模型在本机时改填 `http://127.0.0.1:…`，`localhost` 属可信来源不受限。
+- 给模型上 TLS：`mkcert` 签证书、客户端装根证书，`llama-server --ssl-cert-file … --ssl-key-file …`，地址改 `https://`。
+
+别用 `file://` 双击打开：那不是可信上下文，浏览器会关掉「选本地目录」。
 
 ## 界面语言
 
@@ -89,7 +97,7 @@
 ```bash
 npm start                 # 零依赖静态服务，默认 4180
 npm install && npx playwright install chromium
-npm test                  # 19 条端到端用例（含 mock 的 /v1 模型接口）
+npm test                  # 20 条端到端用例（含 mock 的 /v1 模型接口）
 ```
 
 推送 `dev` 会自动跑 CI（`.github/workflows/ci.yml`）并由 `pages.yml` 发布 Pages（Settings → Pages → Source 选 **GitHub Actions**）。

@@ -442,6 +442,26 @@ test.describe('界面语言 · 跟随浏览器与自定义', () => {
   });
 });
 
+test('混合内容识别：HTTPS 页面 + HTTP 局域网地址会被标红提示', async ({ page }) => {
+  await openApp(page);
+  await page.locator('#btnModel').click();
+  await expect(page.locator('#lmMix')).toBeHidden();                 // 正常 http 页面不提示
+
+  const risk = await page.evaluate(() => ({
+    lan: window.__ANNOTATOR__.mixedRisk('http://192.168.2.78:9931/v1', 'https:'),
+    lp: window.__ANNOTATOR__.mixedRisk('http://127.0.0.1:9931/v1', 'https:'),
+    plain: window.__ANNOTATOR__.mixedRisk('http://192.168.2.78:9931/v1', 'http:'),
+    tls: window.__ANNOTATOR__.mixedRisk('https://192.168.2.78:9931/v1', 'https:'),
+    empty: window.__ANNOTATOR__.mixedRisk('')
+  }));
+  expect(risk.lan).toEqual({ host: '192.168.2.78' });                  // 会被拦
+  expect(risk.lp).toBeNull();                                          // localhost 例外
+  expect(risk.plain).toBeNull();                                       // 页面本身是 http 就不算混合内容
+  expect(risk.tls).toBeNull();                                         // 模型上了 TLS 也没事
+  expect(risk.empty).toBeNull();
+  expect(await page.evaluate(() => window.__ANNOTATOR__.version)).toMatch(/^1\.3\./);
+});
+
 test('界面翻译：显示进度并最终收敛到「完成」', async ({ page }) => {
   await openApp(page);
   await connectMockModel(page);

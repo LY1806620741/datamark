@@ -188,6 +188,12 @@ main{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
 .lmrow>label{font-size:11.5px;color:var(--tx2)}
 .lmrow .inp{width:100%;min-width:0}
 .lmact{display:flex;gap:8px;align-items:center;margin-top:14px;flex-wrap:wrap}
+#lmMix{margin:10px 0 0;padding:10px 12px;border:1px solid #5a3f24;border-left:3px solid var(--acc);border-radius:5px;background:#1f2029;font-size:12px;color:var(--tx2);line-height:1.75}
+#lmMix[hidden]{display:none}
+#lmMix b{color:var(--acc);font-weight:600}
+#lmMix ol{margin:6px 0 0 18px;padding:0}
+#lmMix li{margin:4px 0}
+#lmMix code{background:#0d1116;border:1px solid var(--line2);border-radius:3px;padding:1px 5px;font-size:11.5px}
 .lmstat{font-size:11.5px;color:var(--tx3);margin-top:10px;min-height:18px;white-space:pre-wrap;word-break:break-word}
 .lmstat.ok{color:var(--green)}
 .lmstat.err{color:var(--red)}
@@ -342,6 +348,16 @@ body.ro .seg .txt,body.ro .seg .trt{color:var(--tx)}
       <button class="btn sm" id="lmTest">测试连接</button>
       <span class="grow"></span>
       <button class="btn pri" id="lmSave">保存</button>
+    </div>
+    <div id="lmMix" hidden>
+      <b>被浏览器拦了：页面是 HTTPS，模型是 HTTP（混合内容）</b>
+      <div>Chrome 会直接拒掉 <code>https://…</code> 页面发往 <code>http://192.168.x.x</code> 的请求，报 <code>Mixed Content</code>。三条路，任选一条：</div>
+      <ol>
+        <li><b>用本地 HTTP 打开本工具（最快，零配置）</b>：把本文件存到某个目录，在该目录执行 <code>python3 -m http.server 8000</code>（Windows 用 <code>py -m http.server 8000</code>），浏览器开 <code>http://127.0.0.1:8000/index.html</code>。页面本身成了 HTTP，就不再有混合内容，目录读写和本地模型都正常。</li>
+        <li><b>给模型上 HTTPS</b>：用 <code>mkcert</code> 给这台机器签证书并在客户端装根证书，再启动 <code>llama-server --ssl-cert-file cert.pem --ssl-key-file key.pem</code>，地址填 <code>https://192.168.2.78:9931/v1</code>。</li>
+        <li><b>走 localhost</b>：模型就跑在这台机器上时，填 <code>http://127.0.0.1:9931/v1</code>。<code>localhost</code> 属可信来源，HTTPS 页面请求它不算混合内容。</li>
+      </ol>
+      <div style="margin-top:6px">注意：<code>file://</code> 双击打开不是可信上下文，「选目录」那套会失效，所以优先第 1 条。</div>
     </div>
     <div class="lmstat" id="lmStat"></div>
     <p class="lmtip">连不上时依次查三件事：① 服务是否在跑、端口对不对（llama-server 默认 8080，Ollama 是 11434）；② <b>CORS</b> 是否放行本站来源（llama-server 默认 <code>--cors-origins *</code>，Ollama 需设 <code>OLLAMA_ORIGINS</code> 后重启）；③ 首次调用时浏览器会弹「允许访问本地网络」，点允许。用 <code>file://</code> 双击打开时多数浏览器禁止连本机服务，请用 https 或 <code>http://localhost</code> 打开本工具。</p>
@@ -792,6 +808,7 @@ function lmErrText(err, url) {
   const m = String(err && err.message || err || '');
   if (/abort/i.test(m)) return '请求被取消或超时';
   if (/Failed to fetch|NetworkError|Load failed|network/i.test(m)) {
+    if (mixedRisk(url)) return '被「混合内容」拦了：HTTPS 页面不能直接请求 HTTP 的 ' + new URL(url).host + '。用 http://127.0.0.1 打开本工具，或给模型配 HTTPS 证书（详见「模型」面板里的提示）。';
     return '连不上服务（' + url + '）。常见原因：服务没启动 / 端口不对 / CORS 未放行本站来源 / 浏览器「本地网络访问」权限被拒。\n详见「模型」面板底部的排查清单。';
   }
   return m || '未知错误';
@@ -845,6 +862,7 @@ function openLM() {
   $('#lmLang').value = LM.lang || 'zh';
   lmStatus(LM.base ? '当前：' + lmBase() : '还没连过模型。填好地址点「测试连接」。');
   $('#lmModal').hidden = false;
+  lmMixCheck();
   setTimeout(() => { try { $('#lmBase').focus(); } catch (e) { } }, 30);
 }
 function readLmForm() {
@@ -868,6 +886,23 @@ async function lmModels(quiet) {
   if (!quiet) lmStatus(ids.length ? ('连接正常，' + ids.length + ' 个模型：' + ids.slice(0, 4).join('、') + (ids.length > 4 ? ' …' : '')) : '连接正常，但服务没有返回模型列表（可直接手填模型名）', 'ok');
   return ids;
 }
+/* 会不会被「混合内容」拦掉：HTTPS 页面 + HTTP 的局域网地址 */
+function mixedRisk(base, proto) {
+  const b = String(base || '').trim();
+  const p = proto || location.protocol;
+  if (p !== 'https:' || !/^http:\/\//i.test(b)) return null;
+  let host = '';
+  try { host = new URL(b).hostname; } catch (e) { return null; }
+  if (/^(localhost|127\.0\.0\.1|0\.0\.0\.0|::1)$/i.test(host) || /^127\./.test(host)) return null;
+  return { host };
+}
+function lmMixCheck() {
+  const box = $('#lmMix');
+  if (!box) return null;
+  const risk = mixedRisk($('#lmBase') ? $('#lmBase').value : LM.base) || mixedRisk(LM.asrBase);
+  box.hidden = !risk;
+  return risk;
+}
 async function lmTest() {
   readLmForm();
   if (!LM.base) { lmStatus('先填服务地址', 'err'); return; }
@@ -878,7 +913,12 @@ async function lmTest() {
     applyPendingLang();
     lmStatus('连接正常 · ' + (ids.length ? ids.length + ' 个模型：' + ids.slice(0, 4).join('、') : '未返回模型列表，用默认名即可'), 'ok');
   } catch (e) {
-    lmStatus(String(e.message || e), 'err');
+    const risk = lmMixCheck();
+    if (risk && /Failed to fetch|NetworkError|Load failed|network/i.test(String(e.message || e))) {
+      lmStatus('被混合内容拦了（页面 HTTPS → 模型 HTTP ' + risk.host + '），见下方三条解法', 'err');
+    } else {
+      lmStatus(String(e.message || e), 'err');
+    }
   }
 }
 
@@ -1108,6 +1148,7 @@ function bindLM() {
     try { const ids = await lmModels(true); saveLM(); lmStatus(ids.length ? ('拿到 ' + ids.length + ' 个模型：' + ids.join('、')) : '服务没返回模型列表，可直接手填', ids.length ? 'ok' : ''); }
     catch (e) { lmStatus(String(e.message || e), 'err'); }
   };
+  ['#lmBase', '#lmAsrBase'].forEach(sel => { const el = $(sel); if (el) el.addEventListener('input', lmMixCheck); });
   $('#lmTest').onclick = lmTest;
   $('#lmSave').onclick = () => {
     readLmForm(); saveLM(); $('#lmModal').hidden = true;
@@ -3210,7 +3251,8 @@ function startLangWatch() {
 }
 
 window.__ANNOTATOR__ = {
-  version: '1.3.2',
+  version: '1.3.3',
+  mixedRisk,
   lm: { get config() { return LM; }, translateItem, transcribeItem, transcribeAndTranslate, test: lmTest, models: lmModels },
   i18n: { get lang() { return uiLang; }, get label() { return uiLabel(uiLang); }, get pending() { return pendingLang; }, setUILang, setCustomLang, follow: followBrowserLang, pass: langPass, dict: I18N_EN, cache: () => i18nCache },
   get project() { return P; },

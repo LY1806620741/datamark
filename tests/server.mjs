@@ -93,6 +93,6 @@ createServer(async (req, res) => {
   } catch (e) {
     res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }).end('not found');
   }
-}).listen(PORT, '127.0.0.1', () => {
+}).listen(PORT, process.env.HOST || '127.0.0.1', () => {
   console.log(`serving ${ROOT} at http://127.0.0.1:${PORT}/index.html (with mock /v1 model API)`);
 });
