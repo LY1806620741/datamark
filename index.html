@@ -1074,7 +1074,8 @@ function lmMenu(anchor, it) {
       { label: '模型设置…', fn: openLM }
     ]
   }], 'right');
-  m.setAttribute('data-no-i18n', '');   /* 语言名不参与翻译 */
+  /* 语言名保持原样（不翻），其余菜单项正常本地化 */
+  [].slice.call(m.querySelectorAll('button'), 0, 4).forEach(b => b.setAttribute('data-no-i18n', ''));
   return m;
 }
 function asrMenu(anchor, it) {
@@ -1169,6 +1170,8 @@ const I18N_EN = {
   '简体中文': 'Simplified Chinese',
   '停止当前模型任务': 'Stop current task',
   '模型设置…': 'Model settings…',
+  '跟随浏览器（{x}）': 'Follow browser ({x})',
+  '自定义语言…': 'Custom language…',
   '翻译空译文（保留已改的译文）': 'Fill empty translations',
   '全部重译（覆盖现有译文）': 'Retranslate all',
   '只翻当前筛选结果': 'Translate filtered only',
@@ -1234,8 +1237,20 @@ function i18nSave() {
     localStorage.setItem(UI_CACHE_KEY, JSON.stringify(keep));
   } catch (e) { }
 }
+function reEsc(t) { return String(t).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+/* 词条里可以用 {x} 占位，例如「跟随浏览器（{x}）」→ Follow browser ({x}) */
+const I18N_TPL = Object.keys(I18N_EN).filter(k => k.indexOf('{x}') >= 0).map(k => ({
+  k, parts: k.split('{x}'), out: I18N_EN[k],
+  re: new RegExp('^' + k.split('{x}').map(reEsc).join('(.*?)') + '$')
+}));
 function i18nLookup(raw, lang) {
-  if (lang === 'en' && I18N_EN[raw]) return I18N_EN[raw];
+  if (lang === 'en') {
+    if (I18N_EN[raw]) return I18N_EN[raw];
+    for (const t of I18N_TPL) {
+      const m = t.re.exec(raw);
+      if (m) return t.out.replace('{x}', m[1]);
+    }
+  }
   const c = i18nCache[lang];
   return (c && c[raw]) || null;
 }
