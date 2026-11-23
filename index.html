@@ -193,6 +193,9 @@ main{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
 #lmMix b{color:var(--acc);font-weight:600}
 #lmMix ol{margin:6px 0 0 18px;padding:0}
 #lmMix li{margin:4px 0}
+#lmMix .fwdcmd{display:flex;gap:8px;align-items:center;margin:6px 0 0}
+#lmMix .fwdcmd code{flex:1;overflow-x:auto;white-space:nowrap;padding:5px 8px}
+#lmMix .fwdcmd .btn{flex:none}
 #lmMix code{background:#0d1116;border:1px solid var(--line2);border-radius:3px;padding:1px 5px;font-size:11.5px}
 .lmstat{font-size:11.5px;color:var(--tx3);margin-top:10px;min-height:18px;white-space:pre-wrap;word-break:break-word}
 .lmstat.ok{color:var(--green)}
@@ -351,13 +354,17 @@ body.ro .seg .txt,body.ro .seg .trt{color:var(--tx)}
     </div>
     <div id="lmMix" hidden>
       <b>被浏览器拦了：页面是 HTTPS，模型是 HTTP（混合内容）</b>
-      <div>Chrome 会直接拒掉 <code>https://…</code> 页面发往 <code>http://192.168.x.x</code> 的请求，报 <code>Mixed Content</code>。三条路，任选一条：</div>
+      <div>Chrome 会直接拒掉 <code>https://…</code> 页面向 <code>http://192.168.x.x</code> 的请求，报 <code>Mixed Content</code>。四条路，任选一条：</div>
       <ol>
-        <li><b>用本地 HTTP 打开本工具（最快，零配置）</b>：把本文件存到某个目录，在该目录执行 <code>python3 -m http.server 8000</code>（Windows 用 <code>py -m http.server 8000</code>），浏览器开 <code>http://127.0.0.1:8000/index.html</code>。页面本身成了 HTTP，就不再有混合内容，目录读写和本地模型都正常。</li>
-        <li><b>给模型上 HTTPS</b>：用 <code>mkcert</code> 给这台机器签证书并在客户端装根证书，再启动 <code>llama-server --ssl-cert-file cert.pem --ssl-key-file key.pem</code>，地址填 <code>https://192.168.2.78:9931/v1</code>。</li>
-        <li><b>走 localhost</b>：模型就跑在这台机器上时，填 <code>http://127.0.0.1:9931/v1</code>。<code>localhost</code> 属可信来源，HTTPS 页面请求它不算混合内容。</li>
+        <li><b>SSH 转发到本机（最省事，不用改页面）</b>：在你这台电脑上执行下面这条，把远端模型端口映射到本机 127.0.0.1（HTTPS 页面访问 <code>127.0.0.1</code> 不受混合内容限制）
+          <div class="fwdcmd"><code id="lmFwdCmd"></code><button class="btn sm" id="lmFwdCopy">复制</button></div>
+          <div style="margin-top:5px">转发后点 <button class="btn sm" id="lmFwdUse">改用 127.0.0.1:<span id="lmFwdPort">9931</span></button>，地址栏换成 <code>http://127.0.0.1:…/v1</code>，再点「测试连接」。<span id="lmFwdNote"></span></div>
+        </li>
+        <li><b>给模型上 HTTPS</b>：用 <code>mkcert</code> 签证书并在客户端装根证书，再 <code>llama-server --ssl-cert-file cert.pem --ssl-key-file key.pem</code>，地址填 <code>https://192.168.2.78:9931/v1</code>（自签但不装根证书不行，fetch 不认）。</li>
+        <li><b>把页面也变成 HTTP</b>：下载本文件，同目录跑 <code>python3 -m http.server 8000</code>（Windows <code>py -m http.server 8000</code>），开 <code>http://127.0.0.1:8000/index.html</code>。页面本身是 HTTP，局域网模型直连无阻。</li>
+        <li><b>给模型套一层 HTTPS 隧道</b>：Cloudflare Tunnel、<code>ngrok http 9931</code>、<code>tailscale serve</code> 都能把它变成 <code>https://…</code>，地址换成隧道地址即可。</li>
       </ol>
-      <div style="margin-top:6px">注意：<code>file://</code> 双击打开不是可信上下文，「选目录」那套会失效，所以优先第 1 条。</div>
+      <div style="margin-top:6px">别用 <code>file://</code> 双击打开：不是可信上下文，「选目录」那套会失效。</div>
     </div>
     <div class="lmstat" id="lmStat"></div>
     <p class="lmtip">连不上时依次查三件事：① 服务是否在跑、端口对不对（llama-server 默认 8080，Ollama 是 11434）；② <b>CORS</b> 是否放行本站来源（llama-server 默认 <code>--cors-origins *</code>，Ollama 需设 <code>OLLAMA_ORIGINS</code> 后重启）；③ 首次调用时浏览器会弹「允许访问本地网络」，点允许。用 <code>file://</code> 双击打开时多数浏览器禁止连本机服务，请用 https 或 <code>http://localhost</code> 打开本工具。</p>
@@ -823,9 +830,10 @@ async function lmFetch(path, opts, timeoutMs, rawBase) {
   const headers = Object.assign({}, (opts && opts.headers) || {});
   if (LM.key) headers['Authorization'] = 'Bearer ' + LM.key;
   const init = Object.assign({}, opts || {}, { headers, signal: ctrl.signal });
-  /* https 页面访问本机/局域网明文 http：Chrome 142+ 需「本地网络访问」授权，
-     声明 targetAddressSpace 后不再按混合内容拦截（其他浏览器会忽略这个字段） */
-  try { if (location.protocol === 'https:' && isLanHost(url)) init.targetAddressSpace = 'local'; } catch (e) { }
+  /* 注意：不要给 http://127.0.0.1 声明 targetAddressSpace='local'。
+     那会把 loopback 目标谎报成局域网目标，Chrome 反而按 Private Network Access 拦掉
+     （报 "target IP address space of local yet the resource is in loopback"）。
+     https 页面访问 http://127.0.0.1 本来就是允许的，不需要任何声明。 */
   let res;
   try {
     res = await fetch(url, init);
@@ -896,11 +904,44 @@ function mixedRisk(base, proto) {
   if (/^(localhost|127\.0\.0\.1|0\.0\.0\.0|::1)$/i.test(host) || /^127\./.test(host)) return null;
   return { host };
 }
+/* 从地址算 SSH 转发命令：-L 本机端口:127.0.0.1:远端端口 user@host */
+function lmFwdCmd(base) {
+  const b = String(base || '').trim();
+  if (!/^http:\/\//i.test(b)) return null;
+  let u;
+  try { u = new URL(b); } catch (e) { return null; }
+  const port = u.port || (u.protocol === 'https:' ? '443' : '80');
+  if (/^(localhost|127\.0\.0\.1|::1|\[::1\])$/i.test(u.hostname)) return null;
+  return { host: u.hostname, port, cmd: 'ssh -N -L ' + port + ':127.0.0.1:' + port + ' <你的用户名>@' + u.hostname };
+}
+function lmFwdToLocal() {
+  const el = $('#lmBase');
+  const b = String((el && el.value) || LM.base || '').trim();
+  const f = lmFwdCmd(b);
+  if (!f || !el) return;
+  el.value = b.replace('://' + f.host, '://127.0.0.1');
+  LM.base = lmBase(el.value);
+  saveLM();
+  lmMixCheck();
+  toast('已改成 127.0.0.1:' + f.port + '，先确认 SSH 转发在跑，再点「测试连接」', 4200);
+}
 function lmMixCheck() {
   const box = $('#lmMix');
   if (!box) return null;
-  const risk = mixedRisk($('#lmBase') ? $('#lmBase').value : LM.base) || mixedRisk(LM.asrBase);
+  const val = $('#lmBase') ? $('#lmBase').value : LM.base;
+  const risk = mixedRisk(val) || mixedRisk(LM.asrBase);
   box.hidden = !risk;
+  const f = lmFwdCmd(val) || lmFwdCmd(LM.asrBase);
+  const cmd = $('#lmFwdCmd'), use = $('#lmFwdUse'), port = $('#lmFwdPort'), note = $('#lmFwdNote');
+  if (f && cmd) {
+    cmd.textContent = f.cmd;
+    if (port) port.textContent = f.port;
+    if (use) use.hidden = false;
+    if (note) note.textContent = '（远端服务要放行本站来源的 CORS）';
+  } else {
+    if (use) use.hidden = true;
+    if (note) note.textContent = '';
+  }
   return risk;
 }
 async function lmTest() {
@@ -1149,6 +1190,13 @@ function bindLM() {
     catch (e) { lmStatus(String(e.message || e), 'err'); }
   };
   ['#lmBase', '#lmAsrBase'].forEach(sel => { const el = $(sel); if (el) el.addEventListener('input', lmMixCheck); });
+  const fc = $('#lmFwdCopy'), fu = $('#lmFwdUse');
+  if (fc) fc.onclick = async () => {
+    const t = ($('#lmFwdCmd') || {}).textContent || '';
+    try { await navigator.clipboard.writeText(t); toast('已复制，粘到终端执行'); }
+    catch (e) { toast('复制失败，请手动选中命令复制'); }
+  };
+  if (fu) fu.onclick = lmFwdToLocal;
   $('#lmTest').onclick = lmTest;
   $('#lmSave').onclick = () => {
     readLmForm(); saveLM(); $('#lmModal').hidden = true;
@@ -3251,8 +3299,8 @@ function startLangWatch() {
 }
 
 window.__ANNOTATOR__ = {
-  version: '1.3.3',
-  mixedRisk,
+  version: '1.3.4',
+  mixedRisk, lmFwdCmd, lmFwdToLocal,
   lm: { get config() { return LM; }, translateItem, transcribeItem, transcribeAndTranslate, test: lmTest, models: lmModels },
   i18n: { get lang() { return uiLang; }, get label() { return uiLabel(uiLang); }, get pending() { return pendingLang; }, setUILang, setCustomLang, follow: followBrowserLang, pass: langPass, dict: I18N_EN, cache: () => i18nCache },
   get project() { return P; },

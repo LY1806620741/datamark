@@ -21,7 +21,8 @@ const TYPES = {
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-headers': '*',
-  'access-control-allow-methods': 'GET,POST,DELETE,OPTIONS'
+  'access-control-allow-methods': 'GET,POST,DELETE,OPTIONS',
+  'access-control-allow-private-network': 'true'
 };
 
 function json(res, code, obj) {

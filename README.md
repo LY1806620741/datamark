@@ -52,9 +52,10 @@
 
 **在线版连局域网模型会被拦**：线上页是 `https://`，浏览器禁止它请求 `http://192.168.x.x`（控制台报 `Mixed Content`），这不是工具的问题。三条路：
 
-- 把 `index.html` 存到本地，在该目录跑 `python3 -m http.server 8000`，用 `http://127.0.0.1:8000/index.html` 打开——页面变 HTTP，混合内容消失，选目录、连模型都正常（推荐）。
-- 模型在本机时改填 `http://127.0.0.1:…`，`localhost` 属可信来源不受限。
+- **SSH 转发（推荐，不用改页面）**：`ssh -N -L 9931:127.0.0.1:9931 你的用户名@192.168.2.78`，然后把地址改成 `http://127.0.0.1:9931/v1`。浏览器允许 HTTPS 页面访问 `127.0.0.1`，不算混合内容。面板里会自动拼好这条命令，点「改用 127.0.0.1」还能一键换地址。
+- 把 `index.html` 存到本地，在该目录跑 `python3 -m http.server 8000`，用 `http://127.0.0.1:8000/index.html` 打开——页面变 HTTP，局域网地址也能直连。
 - 给模型上 TLS：`mkcert` 签证书、客户端装根证书，`llama-server --ssl-cert-file … --ssl-key-file …`，地址改 `https://`。
+- 上层套个 HTTPS 隧道：Cloudflare Tunnel、`ngrok http 9931`、`tailscale serve`。
 
 别用 `file://` 双击打开：那不是可信上下文，浏览器会关掉「选本地目录」。
 
@@ -97,7 +98,7 @@
 ```bash
 npm start                 # 零依赖静态服务，默认 4180
 npm install && npx playwright install chromium
-npm test                  # 20 条端到端用例（含 mock 的 /v1 模型接口）
+npm test                  # 21 条端到端用例（含 mock 的 /v1 模型接口）
 ```
 
 推送 `dev` 会自动跑 CI（`.github/workflows/ci.yml`）并由 `pages.yml` 发布 Pages（Settings → Pages → Source 选 **GitHub Actions**）。

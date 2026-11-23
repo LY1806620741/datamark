@@ -442,6 +442,22 @@ test.describe('界面语言 · 跟随浏览器与自定义', () => {
   });
 });
 
+test('SSH 转发：自动生成 -L 命令，并可一键把地址改到 127.0.0.1', async ({ page }) => {
+  await openApp(page);
+  await page.locator('#btnModel').click();
+
+  const cmd = await page.evaluate(() => window.__ANNOTATOR__.lmFwdCmd('http://192.168.2.78:9931/v1'));
+  expect(cmd).toEqual({ host: '192.168.2.78', port: '9931', cmd: 'ssh -N -L 9931:127.0.0.1:9931 <你的用户名>@192.168.2.78' });
+  // 本机地址不用转发；没端口时按 80 端口拼
+  expect(await page.evaluate(() => window.__ANNOTATOR__.lmFwdCmd('http://127.0.0.1:8080/v1'))).toBeNull();
+  expect((await page.evaluate(() => window.__ANNOTATOR__.lmFwdCmd('http://192.168.1.5/v1'))).port).toBe('80');
+
+  await page.locator('#lmBase').fill('http://192.168.2.78:9931/v1');
+  await page.evaluate(() => window.__ANNOTATOR__.lmFwdToLocal());
+  await expect(page.locator('#lmBase')).toHaveValue('http://127.0.0.1:9931/v1');
+  expect(await page.evaluate(() => window.__ANNOTATOR__.lm.config.base)).toBe('http://127.0.0.1:9931/v1');
+});
+
 test('混合内容识别：HTTPS 页面 + HTTP 局域网地址会被标红提示', async ({ page }) => {
   await openApp(page);
   await page.locator('#btnModel').click();
