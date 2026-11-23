@@ -68,7 +68,7 @@
 - [x] 界面语言：英文内置词条生效、文稿内容不被翻译、切回中文完整还原
 - [x] 界面语言：非内置语言走模型翻译并写入缓存，刷新后仍生效
 - [x] 界面语言：浏览器为 en-US 时首访自动英文；自定义 Français 生效且标签持久化
-- [x] CI 全绿（16/16）
+- [x] CI 全绿（19/19）
 
 ## 四、边界与非目标
 
@@ -99,7 +99,7 @@ media-annotator/
 ├── need.md                    # 本需求文档
 ├── docs/                      # README 截图
 ├── tests/
-│   ├── annotator.spec.js      # 12 条端到端用例
+│   ├── annotator.spec.js      # 19 条端到端用例
 │   ├── server.mjs             # 零依赖静态服务器 + 假 /v1 模型接口
 │   └── fixtures/demo.mp4      # 测试素材
 ├── playwright.config.js

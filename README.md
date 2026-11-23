@@ -89,7 +89,7 @@
 ```bash
 npm start                 # 零依赖静态服务，默认 4180
 npm install && npx playwright install chromium
-npm test                  # 12 条端到端用例（含 mock 的 /v1 模型接口）
+npm test                  # 19 条端到端用例（含 mock 的 /v1 模型接口）
 ```
 
 推送 `dev` 会自动跑 CI（`.github/workflows/ci.yml`）并由 `pages.yml` 发布 Pages（Settings → Pages → Source 选 **GitHub Actions**）。

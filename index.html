@@ -166,6 +166,12 @@ main{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
 .menu .t{font-size:10.5px;color:var(--tx3);padding:5px 9px 3px;letter-spacing:.4px}
 #toast{position:fixed;left:50%;bottom:34px;transform:translate(-50%,14px);background:#232a37;color:var(--tx);border:1px solid var(--line2);border-left:3px solid var(--acc);border-radius:5px;padding:8px 14px;font-size:12.5px;opacity:0;pointer-events:none;transition:.22s;z-index:90;max-width:80vw}
 #toast.on{opacity:1;transform:translate(-50%,0)}
+#i18nProg{position:fixed;left:50%;bottom:66px;transform:translate(-50%,10px);display:flex;align-items:center;gap:8px;background:#1b212c;color:var(--tx2);border:1px solid var(--line2);border-radius:20px;padding:6px 14px;font-size:12px;z-index:95;opacity:0;pointer-events:none;transition:.2s}
+#i18nProg.on{opacity:1;transform:translate(-50%,0)}
+#i18nProg .bar{width:120px;height:4px;border-radius:2px;background:#2a3342;overflow:hidden}
+#i18nProg .bar i{display:block;height:100%;width:0;background:var(--acc);transition:width .25s}
+#i18nProg .dot{width:8px;height:8px;border-radius:50%;background:var(--acc);animation:i18nPulse 1s infinite alternate}
+@keyframes i18nPulse{from{opacity:.25}to{opacity:1}}
 .modal{position:fixed;inset:0;background:#05070ad9;display:grid;place-items:center;z-index:100;padding:24px}
 .modal[hidden]{display:none}
 .modal .box{width:min(640px,100%);max-height:88vh;overflow-y:auto;background:#141821;border:1px solid var(--line2);border-radius:9px;padding:20px 22px 26px;box-shadow:0 24px 60px #000a}
@@ -1257,7 +1263,7 @@ function i18nPut(raw, out, lang) {
   i18nCache[lang][raw] = out;
 }
 function langSkip(el) {
-  return !el || !!el.closest('#aList,#itemList,#vCv,#bWrap,script,style,canvas,kbd,code,#projName,#btnLang,[data-no-i18n],#toast,#lmProg,#aStat,#vStat,[contenteditable="true"],.seg');
+  return !el || !!el.closest('#aList,#itemList,#vCv,#bWrap,script,style,canvas,kbd,code,#projName,#btnLang,[data-no-i18n],#toast,#lmProg,#i18nProg,#aStat,#vStat,[contenteditable="true"],.seg');
 }
 function langBox(node, create) {
   let box = LANG_TRACK.get(node);
@@ -1355,32 +1361,74 @@ async function langTranslateBatch(list) {
   });
 }
 
+/* 界面翻译的进度提示（小胶囊，固定在底部，不挡操作） */
+function i18nProg(msg, ratio, busy) {
+  let el = $('#i18nProg');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'i18nProg';
+    el.innerHTML = '<span class="dot"></span><span class="tx"></span><span class="bar"><i></i></span>';
+    document.body.appendChild(el);
+  }
+  const tx = el.querySelector('.tx'), bar = el.querySelector('.bar i');
+  tx.textContent = msg || '';
+  bar.style.width = Math.round(Math.max(0, Math.min(1, ratio || 0)) * 100) + '%';
+  el.classList.toggle('on', !!msg);
+  if (!busy && msg) { clearTimeout(i18nProg._t); i18nProg._t = setTimeout(() => el.classList.remove('on'), 2600); }
+  return el;
+}
+let langBusy = false, langDirty = false;
+let langApplying = false;
+
 async function langPass() {
   if (uiLang === 'zh') { langRestoreAll(); return; }
-  const todo = langScan();
-  if (!todo.length) return;
+  if (langBusy) { langDirty = true; return; }          // 正在翻：只记一笔，不并发
+  if (!langScan().length) return;
   if (!LM.base) {
     if (uiLang !== 'en' && !langPass._hinted) { langPass._hinted = 1; toast('界面翻译需要先在「模型」里连上服务（英文有内置词条）', 4000); }
     return;
   }
   const job = ++langJob;
-  const queue = todo.slice(0, 96);
-  langPending = queue.length;
-  let done = 0;
-  for (let i = 0; i < queue.length; i += 12) {
-    if (job !== langJob || uiLang === 'zh') return;
-    const slice = queue.slice(i, i + 12);
-    try { langApply(slice, await langTranslateBatch(slice)); done += slice.length; }
-    catch (e) { /* 单批失败就跳过，界面保持中文 */ }
+  langBusy = true;
+  let done = 0, failed = 0, rounds = 0;
+  try {
+    do {
+      langDirty = false;
+      const queue = langScan().slice(0, 96);
+      if (!queue.length) break;
+      langPending = queue.length;
+      i18nProg('AI 翻译界面 ' + done + '/' + (done + queue.length) + '（' + uiLabel(uiLang) + '）', 0, true);
+      for (let i = 0; i < queue.length; i += 12) {
+        if (job !== langJob || uiLang === 'zh') { i18nProg(''); return; }
+        const slice = queue.slice(i, i + 12);
+        try {
+          langApplying = true;
+          langApply(slice, await langTranslateBatch(slice));
+          done += slice.length;
+        } catch (e) { failed += slice.length; }
+        finally { langApplying = false; }
+        i18nProg('AI 翻译界面 ' + (done + failed) + '/' + (done + failed + queue.length - i - slice.length) + '（' + uiLabel(uiLang) + '）', (i + slice.length) / queue.length, true);
+      }
+      i18nSave();
+      langPending = 0;
+      rounds++;
+    } while (langDirty && rounds < 3 && uiLang !== 'zh');
+  } finally {
+    langBusy = false;
+    langPending = 0;
   }
-  i18nSave();
-  langPending = 0;
-  if (done) toast('界面已本地化 ' + done + ' 条（已缓存，下次秒开）', 3600);
+  if (uiLang === 'zh') { i18nProg(''); return; }
+  if (done || failed) {
+    i18nProg('AI 翻译完成 ' + done + ' 条' + (failed ? '（失败 ' + failed + ' 条，可再点 AI 重试）' : ''), 1, false);
+    toast('界面已本地化 ' + done + ' 条' + (failed ? '，' + failed + ' 条没翻' : '（已缓存，下次秒开）'), 3600);
+  } else {
+    i18nProg('');
+  }
 }
 
 function langSchedule(ms) {
   clearTimeout(langSchedule._t);
-  langSchedule._t = setTimeout(() => { if (uiLang !== 'zh') langPass(); }, ms || 200);
+  langSchedule._t = setTimeout(() => { if (uiLang !== 'zh' && !langApplying) langPass(); }, ms || 200);
 }
 function setUILang(lang, label) {
   if (label) { uiLabels[lang] = label; uiSaveLabels(); }
@@ -3162,7 +3210,7 @@ function startLangWatch() {
 }
 
 window.__ANNOTATOR__ = {
-  version: '1.3.1',
+  version: '1.3.2',
   lm: { get config() { return LM; }, translateItem, transcribeItem, transcribeAndTranslate, test: lmTest, models: lmModels },
   i18n: { get lang() { return uiLang; }, get label() { return uiLabel(uiLang); }, get pending() { return pendingLang; }, setUILang, setCustomLang, follow: followBrowserLang, pass: langPass, dict: I18N_EN, cache: () => i18nCache },
   get project() { return P; },

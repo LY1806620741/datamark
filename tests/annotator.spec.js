@@ -442,6 +442,30 @@ test.describe('界面语言 · 跟随浏览器与自定义', () => {
   });
 });
 
+test('界面翻译：显示进度并最终收敛到「完成」', async ({ page }) => {
+  await openApp(page);
+  await connectMockModel(page);
+  // 让每批请求慢一点，进度条才有可观察的中间态
+  await page.route('**/v1/chat/completions', async r => {
+    await new Promise(x => setTimeout(x, 320));
+    r.continue();
+  });
+  page.once('dialog', d => d.accept('Français'));
+  await page.locator('#btnLang').click();
+  await page.locator('.menu button', { hasText: 'AI 翻译' }).click();
+
+  const prog = page.locator('#i18nProg');
+  await expect(prog).toContainText('AI 翻译界面', { timeout: 15000 });
+  await expect(prog).toContainText(/界面 \d+.*\/.*（Français）/, { timeout: 5000 }).catch(() => {});
+  await expect(prog).toContainText('AI 翻译完成', { timeout: 30000 });
+  await expect(prog).not.toHaveClass(/on/, { timeout: 6000 });          // 完成后自动收起
+
+  // 切回中文时进度必须清掉，不留残影
+  await page.locator('#btnLang').click();
+  await page.locator('.menu button', { hasText: /^中文$/ }).click();
+  expect(await prog.evaluate(el => el.classList.contains('on'))).toBe(false);
+});
+
 test('自定义语言：输入 Français 后由模型翻译界面并记住标签', async ({ page }) => {
   await openApp(page);
   await connectMockModel(page);
