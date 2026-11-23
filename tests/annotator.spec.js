@@ -404,14 +404,14 @@ test('转写走独立的转写服务地址（与对话模型不同端口）', as
 test('界面语言：内置英文词条，文稿内容不动，切回中文完整还原', async ({ page }) => {
   await openApp(page);
   await page.locator('#btnLang').click();
-  await page.locator('.menu button', { hasText: 'EN' }).click();
+  await page.locator('.menu button', { hasText: /^English$/ }).click();
   await expect(page.locator('h1')).toHaveText('Annotator');
   await expect(page.locator('#btnImportMedia')).toHaveText('Import');
   await expect(page.locator('#aSearch')).toHaveAttribute('placeholder', 'Search text / translation / speaker');
   await expect(page.locator('#aList .seg .txt').first()).toContainText('今天把这一版功能过一遍');
 
   await page.locator('#btnLang').click();
-  await page.locator('.menu button', { hasText: '简体中文' }).click();
+  await page.locator('.menu button', { hasText: /^中文$/ }).click();
   await expect(page.locator('h1')).toHaveText('音视频标注台');
   await expect(page.locator('#btnImportMedia')).toHaveText('导入媒体');
   await expect(page.locator('#btnLang')).toHaveText('中文');
@@ -421,12 +421,38 @@ test('界面翻译：非内置语言交给已配置的模型，结果缓存到�
   await openApp(page);
   await connectMockModel(page);
   await page.locator('#btnLang').click();
-  await page.locator('.menu button', { hasText: '日本語' }).click();
+  await page.locator('.menu button', { hasText: /^日本語/ }).click();
   await expect(page.locator('h1')).toContainText('MOCK:', { timeout: 25000 });
   await expect(page.locator('#btnImportMedia')).toContainText('MOCK:', { timeout: 25000 });
   expect(await page.evaluate(() => Object.keys(window.__ANNOTATOR__.i18n.cache().ja || {}).length)).toBeGreaterThan(5);
 
   await page.reload();
   await expect(page.locator('#itemList .item')).toHaveCount(2);
+  await expect(page.locator('h1')).toContainText('MOCK:', { timeout: 15000 });
+});
+
+test.describe('界面语言 · 跟随浏览器与自定义', () => {
+  test.use({ locale: 'en-US' });
+  test('浏览器是英文时首访自动英文', async ({ page }) => {
+    await openApp(page);
+    await expect(page.locator('#btnLang')).toHaveText('English');
+    await expect(page.locator('h1')).toHaveText('Annotator');
+    expect(await page.evaluate(() => window.__ANNOTATOR__.i18n.lang)).toBe('en');
+  });
+});
+
+test('自定义语言：输入 Français 后由模型翻译界面并记住标签', async ({ page }) => {
+  await openApp(page);
+  await connectMockModel(page);
+  page.once('dialog', d => d.accept('Français'));
+  await page.locator('#btnLang').click();
+  await page.locator('.menu button', { hasText: '自定义语言' }).click();
+  await expect(page.locator('#btnLang')).toHaveText('Français');
+  await expect(page.locator('h1')).toContainText('MOCK:', { timeout: 25000 });
+  expect(await page.evaluate(() => window.__ANNOTATOR__.i18n.lang)).toBe('Français');
+
+  await page.reload();
+  await expect(page.locator('#itemList .item')).toHaveCount(2);
+  await expect(page.locator('#btnLang')).toHaveText('Français');
   await expect(page.locator('h1')).toContainText('MOCK:', { timeout: 15000 });
 });

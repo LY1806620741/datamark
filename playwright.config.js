@@ -11,6 +11,7 @@ module.exports = defineConfig({
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: 'http://127.0.0.1:4180',
+    locale: 'zh-CN',
     acceptDownloads: true,
     launchOptions: process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {},
     trace: 'retain-on-failure',

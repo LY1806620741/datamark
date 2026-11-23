@@ -232,7 +232,7 @@ body.ro .seg .txt,body.ro .seg .trt{color:var(--tx)}
     <button class="btn gho edit-only" id="btnAddVideo">新建画框项</button>
     <button class="btn gho edit-only" id="btnImportJson">导入标注</button>
     <button class="btn gho edit-only" id="btnExportAll">导出标注</button>
-    <button class="btn gho" id="btnLang" title="界面语言：中文 / English / 日本語 / 한국어（非中英需先连模型）">中文</button>
+    <button class="btn gho" id="btnLang" title="界面语言：跟随浏览器 / 中文 / English / 日本語 / 한국어 / 自定义（非中英需先连模型）">中文</button>
     <button class="btn gho edit-only" id="btnModel" title="连接本机 / 局域网私有模型（OpenAI 兼容）：翻译与转写">模型</button>
     <button class="btn gho edit-only" id="btnGuide" title="新手引导">引导</button>
     <button class="btn gho" id="btnHelp" title="使用说明与快捷键">?</button>
@@ -869,6 +869,7 @@ async function lmTest() {
   try {
     const ids = await lmModels(true);
     saveLM();
+    applyPendingLang();
     lmStatus('连接正常 · ' + (ids.length ? ids.length + ' 个模型：' + ids.slice(0, 4).join('、') : '未返回模型列表，用默认名即可'), 'ok');
   } catch (e) {
     lmStatus(String(e.message || e), 'err');
@@ -1073,6 +1074,8 @@ function lmMenu(anchor, it) {
       { label: '模型设置…', fn: openLM }
     ]
   }], 'right');
+  m.setAttribute('data-no-i18n', '');   /* 语言名不参与翻译 */
+  return m;
 }
 function asrMenu(anchor, it) {
   return menuAt(anchor, [{
@@ -1102,7 +1105,11 @@ function bindLM() {
     catch (e) { lmStatus(String(e.message || e), 'err'); }
   };
   $('#lmTest').onclick = lmTest;
-  $('#lmSave').onclick = () => { readLmForm(); saveLM(); $('#lmModal').hidden = true; toast(LM.base ? '模型已保存：' + lmBase() : '已清空模型配置'); };
+  $('#lmSave').onclick = () => {
+    readLmForm(); saveLM(); $('#lmModal').hidden = true;
+    toast(LM.base ? '模型已保存：' + lmBase() : '已清空模型配置');
+    if (LM.base) applyPendingLang();
+  };
   $('#lmBase').onkeydown = e => { if (e.key === 'Enter') lmTest(); };
 }
 
@@ -1112,8 +1119,16 @@ function bindLM() {
    —— 只翻界面文案，不动你的文稿、文件名、标注说明。
 ============================================================ */
 const UI_LANG_KEY = 'annotator.lang.v1';
+const UI_LANG_LABEL_KEY = 'annotator.langlabel.v1';
 const UI_CACHE_KEY = 'annotator.i18n.v1';
 const UI_LABEL = { zh: '中文', en: 'EN', ja: '日本語', ko: '한국어' };
+const UI_OFFLINE = ['zh', 'en']; /* 内置词条覆盖的语言：不连模型也能用 */
+const LANG_NICE = {
+  zh: '简体中文', en: 'English', ja: '日本語', ko: '한국어',
+  fr: 'Français', de: 'Deutsch', es: 'Español', pt: 'Português', ru: 'Русский', it: 'Italiano',
+  ar: 'العربية', th: 'ไทย', vi: 'Tiếng Việt', id: 'Bahasa Indonesia', hi: 'हिन्दी',
+  tr: 'Türkçe', nl: 'Nederlands', pl: 'Polski', uk: 'Українська', sv: 'Svenska', da: 'Dansk'
+};
 const UI_INLINE_MAX = 150; /* 超过这个长度的段落不送模型，避免又慢又贵 */
 const I18N_EN = {
   '音视频标注台': 'Annotator',
@@ -1174,13 +1189,39 @@ const I18N_EN = {
   '这一段还没有文稿': 'This item has no transcript yet'
 };
 let uiLang = 'zh';
-try { uiLang = localStorage.getItem(UI_LANG_KEY) || 'zh'; } catch (e) { }
+let uiLabels = {};
+let pendingLang = '';   /* 浏览器语言不在内置范围、又还没连模型时先记下来，连上后自动切 */
+try { uiLabels = JSON.parse(localStorage.getItem(UI_LANG_LABEL_KEY) || '{}') || {}; } catch (e) { uiLabels = {}; }
+function browserLang() {
+  const raw = String((navigator.languages && navigator.languages[0]) || navigator.language || 'zh').toLowerCase();
+  return (raw.split('-')[0] || 'zh').replace('_', '');
+}
+(function initLang() {
+  let saved = '';
+  try { saved = localStorage.getItem(UI_LANG_KEY) || ''; } catch (e) { }
+  if (saved) { uiLang = saved; return; }
+  const b = browserLang();
+  if (UI_OFFLINE.indexOf(b) >= 0) { uiLang = b; return; }
+  /* 浏览器是其他语言：有模型就直接翻，没有就先中文，等连上模型再自动切 */
+  if (b && b !== 'zh') {
+    if (LM.base) uiLang = b; else { pendingLang = b; uiLang = 'zh'; }
+    return;
+  }
+  uiLang = 'zh';
+})();
+document.documentElement.lang = uiLang === 'zh' ? 'zh-CN' : uiLang;
 let i18nCache = {};
 try { i18nCache = JSON.parse(localStorage.getItem(UI_CACHE_KEY) || '{}') || {}; } catch (e) { i18nCache = {}; }
 const LANG_TRACK = new WeakMap(); /* 节点 -> { text:rec, attrs:{名字:rec} } 便于切回中文 */
 const LANG_RECS = [];             /* 已替换过的记录，切换语言时用来还原 */
 let langJob = 0, langPending = 0;
 
+function uiLabel(code) {
+  if (code === 'zh') return '中文';
+  return uiLabels[code] || LANG_NICE[code] || UI_LABEL[code] || String(code || '').toUpperCase();
+}
+function uiLangName(code) { return uiLabels[code] || LANG_NICE[code] || LANG_NAME[code] || code; }
+function uiSaveLabels() { try { localStorage.setItem(UI_LANG_LABEL_KEY, JSON.stringify(uiLabels)); } catch (e) { } }
 function i18nSave() {
   try {
     const keep = {};
@@ -1203,7 +1244,7 @@ function i18nPut(raw, out, lang) {
   i18nCache[lang][raw] = out;
 }
 function langSkip(el) {
-  return !el || !!el.closest('#aList,#itemList,#vCv,#bWrap,script,style,canvas,kbd,code,#projName,#toast,#lmProg,#aStat,#vStat,[contenteditable="true"],.seg');
+  return !el || !!el.closest('#aList,#itemList,#vCv,#bWrap,script,style,canvas,kbd,code,#projName,#btnLang,[data-no-i18n],#toast,#lmProg,#aStat,#vStat,[contenteditable="true"],.seg');
 }
 function langBox(node, create) {
   let box = LANG_TRACK.get(node);
@@ -1242,42 +1283,29 @@ function langReady() { return uiLang !== 'zh' && (!!LM.base || uiLang === 'en');
 /* 收集本次需要翻译的文本：先查词条/缓存，命中就地替换，未命中攒成批次 */
 function langScan() {
   const todo = [];
-  const store = (node, attr, raw) => {
+  const store = (node, attr) => {
+    const cur = langCurrent(node, attr);
+    let rec = langRecall(node, attr);
+    if (rec && cur !== rec.orig && String(cur).trim() !== rec.applied) { rec.orig = cur; rec.applied = null; }
+    const raw = String(rec ? rec.orig : cur || '').trim();
+    if (!raw) return;
     const hit = i18nLookup(raw, uiLang);
-    if (!hit && raw.length > UI_INLINE_MAX) return;
-    if (hit) {
-      if (langCurrent(node, attr) === hit) return;
-      langRemember(node, attr, { node, attr, orig: langCurrent(node, attr), applied: hit });
-      langSet(node, attr, hit);
-      return;
-    }
-    todo.push({ node, attr, raw });
+    if (!hit) { if (raw.length <= UI_INLINE_MAX) todo.push({ node, attr, raw }); return; }
+    if (String(cur).trim() === hit) return;              /* 已经是译文：不动，避免来回抖动 */
+    langRemember(node, attr, { node, attr, orig: cur, applied: hit });
+    langSet(node, attr, hit);
   };
-  const nodes = [];
   const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
     acceptNode(n) {
       const p = n.parentElement;
       if (!p || langSkip(p)) return NodeFilter.FILTER_REJECT;
-      const t = (n.nodeValue || '').trim();
-      if (!t) return NodeFilter.FILTER_REJECT;
-      return NodeFilter.FILTER_ACCEPT;
+      return (n.nodeValue || '').trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
     }
   });
-  while (w.nextNode()) nodes.push(w.currentNode);
-  nodes.forEach(n => {
-    const rec = langRecall(n, null);
-    if (rec && n.nodeValue !== rec.orig && n.nodeValue !== rec.applied) { rec.orig = n.nodeValue; rec.applied = null; }
-    const raw = (rec ? rec.orig : n.nodeValue || '').trim();
-    if (!raw) return;
-    store(n, null, raw);
-  });
+  while (w.nextNode()) store(w.currentNode, null);
   $$('[placeholder],[title]').forEach(el => {
     if (langSkip(el)) return;
-    ['placeholder', 'title'].forEach(attr => {
-      const v = el.getAttribute(attr);
-      if (!v || !v.trim()) return;
-      store(el, attr, v.trim());
-    });
+    ['placeholder', 'title'].forEach(attr => { if (el.getAttribute(attr)) store(el, attr); });
   });
   return todo;
 }
@@ -1298,7 +1326,7 @@ async function langTranslateBatch(list) {
   const body = {
     model: LM.model || 'default', temperature: 0, stream: false,
     messages: [
-      { role: 'system', content: '你是界面本地化翻译。把给定的界面文案逐条翻译成' + (LANG_NAME[uiLang] || uiLang) + '，按钮和标签用简短名词短语，不要加句号、不要解释、不要合并或省略。只输出 JSON：{"items":[{"i":序号,"tr":"译文"}]}' },
+      { role: 'system', content: '你是界面本地化翻译。把给定的界面文案逐条翻译成' + uiLangName(uiLang) + '，按钮和标签用简短名词短语，不要加句号、不要解释、不要合并或省略。只输出 JSON：{"items":[{"i":序号,"tr":"译文"}]}' },
       { role: 'user', content: user }
     ]
   };
@@ -1341,27 +1369,60 @@ function langSchedule(ms) {
   clearTimeout(langSchedule._t);
   langSchedule._t = setTimeout(() => { if (uiLang !== 'zh') langPass(); }, ms || 200);
 }
-function setUILang(lang) {
-  if (uiLang === lang) return;
+function setUILang(lang, label) {
+  if (label) { uiLabels[lang] = label; uiSaveLabels(); }
+  if (uiLang === lang) { if ($('#btnLang')) $('#btnLang').textContent = uiLabel(lang); return; }
   langPass._hinted = 0;
   langRestoreAll();
   uiLang = lang;
+  pendingLang = '';
   try { localStorage.setItem(UI_LANG_KEY, lang); } catch (e) { }
-  if ($('#btnLang')) $('#btnLang').textContent = UI_LABEL[lang];
+  document.documentElement.lang = lang === 'zh' ? 'zh-CN' : lang;
+  if ($('#btnLang')) $('#btnLang').textContent = uiLabel(lang);
   if (lang === 'zh') { toast('界面已切回中文'); return; }
+  if (UI_OFFLINE.indexOf(lang) < 0 && !LM.base) {
+    toast('「' + uiLabel(lang) + '」需要先在「模型」里连上服务；连上后会自动切换', 4200);
+  }
   langPass();
-  toast('界面语言：' + (LANG_NAME[lang] || lang), 2200);
+  return true;
+}
+function setCustomLang() {
+  let name = '';
+  try { name = String(prompt('输入语言，例如 Français / Deutsch / 粤语 / Русский', uiLabel(uiLang)) || '').trim(); } catch (e) { name = ''; }
+  if (!name) return;
+  setUILang(name, name);
+}
+function followBrowserLang() {
+  const b = browserLang();
+  setUILang(b, uiLabel(b));
+}
+/* 模型连上后，把之前因为没模型而暂存的浏览器语言切过去 */
+function applyPendingLang() {
+  if (!pendingLang || !LM.base) return;
+  const l = pendingLang;
+  pendingLang = '';
+  setUILang(l, uiLabel(l));
 }
 function langMenu(anchor) {
-  return menuAt(anchor, [{
+  const b = browserLang();
+  const m = menuAt(anchor, [{
     title: '界面语言',
-    items: ['zh', 'en', 'ja', 'ko'].map(l => ({ label: UI_LABEL[l] + (l === 'zh' ? '（简体中文）' : ''), fn: () => setUILang(l) }))
+    items: ['zh', 'en', 'ja', 'ko'].map(l => ({
+      label: uiLabel(l) + (UI_OFFLINE.indexOf(l) < 0 ? ' · 需模型' : ''),
+      fn: () => setUILang(l)
+    }))
+  }, {
+    items: [
+      { label: '跟随浏览器（' + (UI_LABEL[b] || b) + '）', fn: followBrowserLang },
+      { label: '自定义语言…', fn: setCustomLang },
+      { label: '模型设置…', fn: openLM }
+    ]
   }], 'right');
 }
 function bindLang() {
   const b = $('#btnLang');
   if (!b) return;
-  b.textContent = UI_LABEL[uiLang] || '中文';
+  b.textContent = uiLabel(uiLang);
   b.onclick = e => langMenu(e.currentTarget);
 }
 
@@ -3080,7 +3141,7 @@ function startLangWatch() {
 window.__ANNOTATOR__ = {
   version: '1.3.0',
   lm: { get config() { return LM; }, translateItem, transcribeItem, transcribeAndTranslate, test: lmTest, models: lmModels },
-  i18n: { get lang() { return uiLang; }, setUILang, pass: langPass, dict: I18N_EN, cache: () => i18nCache },
+  i18n: { get lang() { return uiLang; }, get label() { return uiLabel(uiLang); }, get pending() { return pendingLang; }, setUILang, setCustomLang, follow: followBrowserLang, pass: langPass, dict: I18N_EN, cache: () => i18nCache },
   get project() { return P; },
   isRO: () => RO,
   buildReadOnlyHTML,
