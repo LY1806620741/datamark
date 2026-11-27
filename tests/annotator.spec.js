@@ -442,6 +442,28 @@ test.describe('界面语言 · 跟随浏览器与自定义', () => {
   });
 });
 
+test('安装命令按浏览器系统给：Windows 用 winget，其他系统各给各的', async ({ page }) => {
+  await openApp(page);
+  const cmds = await page.evaluate(() => ({
+    win: window.__ANNOTATOR__.installCmd('windows'),
+    mac: window.__ANNOTATOR__.installCmd('mac'),
+    lin: window.__ANNOTATOR__.installCmd('linux'),
+    now: window.__ANNOTATOR__.installCmd(),
+    os: window.__ANNOTATOR__.userOS()
+  }));
+  expect(cmds.win).toEqual({ name: 'Windows', cmd: 'winget install --id CaddyServer.Caddy -e' });
+  expect(cmds.mac.cmd).toBe('brew install caddy');
+  expect(cmds.lin.cmd).toBe('curl -sS https://webi.sh/caddy | sh');
+  expect(['windows', 'mac', 'linux']).toContain(cmds.now.name === 'Windows' ? 'windows' : cmds.now.name === 'macOS' ? 'mac' : 'linux');
+  expect(['windows', 'mac', 'linux', 'other']).toContain(cmds.os);
+
+  await page.locator('#btnModel').click();
+  await page.fill('#lmBase', 'http://192.168.2.78:9931/v1');
+  await expect(page.locator('#lmInstall')).toHaveText(cmds.now.cmd);
+  const other = cmds.now.name === 'Windows' ? 'brew install caddy' : 'winget install --id CaddyServer.Caddy';
+  await expect(page.locator('#lmOsAlt')).toContainText(other);          // 另一套系统的命令作为备选列出
+});
+
 test('Caddy 转发：面板给出安装命令，并按地址生成一行 reverse-proxy 命令', async ({ page }) => {
   await openApp(page);
   await page.locator('#btnModel').click();
@@ -458,7 +480,7 @@ test('Caddy 转发：面板给出安装命令，并按地址生成一行 reverse
 
   // 安装命令三种系统都在面板里
   await expect(page.locator('#lmMix')).toContainText('brew install caddy');
-  await expect(page.locator('#lmMix')).toContainText('choco install caddy');
+  await expect(page.locator('#lmMix')).toContainText('winget install --id CaddyServer.Caddy');
   await expect(page.locator('#lmMix')).toContainText('webi.sh/caddy');
   await expect(page.locator('#lmMix')).toContainText('caddy trust');
 

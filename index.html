@@ -364,11 +364,10 @@ body.ro .seg .txt,body.ro .seg .trt{color:var(--tx)}
       <b>被浏览器拦了：页面是 HTTPS，模型是 HTTP（混合内容）</b>
       <div>Chrome 直接拒掉 <code>https://…</code> 页面向 <code>http://内网IP</code> 的请求，报 <code>Mixed Content</code>。下面任选一条：</div>
       <ol>
-        <li><b>Caddy 一行转发成 HTTPS（推荐，两种系统都有包）</b>
-          <div class="sub2">安装（选你系统的）</div>
-          <div class="osline"><span>macOS</span><code data-copy>brew install caddy</code></div>
-          <div class="osline"><span>Windows</span><code data-copy>choco install caddy</code></div>
-          <div class="osline"><span>Linux</span><code data-copy>curl -sS https://webi.sh/caddy | sh</code></div>
+        <li><b>Caddy 一行转发成 HTTPS（推荐，三大系统都有包）</b>
+          <div class="sub2">安装（检测到你用的是 <span id="lmOsName">…</span>）</div>
+          <div class="osline"><code id="lmInstall" data-copy></code><button class="btn sm" id="lmInstallCopy">复制</button></div>
+          <div class="muted" id="lmOsAlt"></div>
           <div class="sub2">运行（把内网模型转成 <code>https://localhost</code>，并补上 CORS 响应头）</div>
           <div class="fwdcmd"><code id="lmCaddyCmd" data-copy></code><button class="btn sm" id="lmCaddyCopy">复制</button></div>
           <div style="margin-top:5px">首次跑完执行一次 <code data-copy>caddy trust</code>（自签根证书进系统库，不装浏览器会报证书错误）。然后点 <button class="btn sm" id="lmCaddyUse">改用 https://localhost:<span id="lmCaddyPort">9931</span></button>，再点「测试连接」。</div>
@@ -971,6 +970,24 @@ function lmCaddyUse() {
   lmMixCheck();
   toast('已换成 ' + f.use + '：确认 Caddy 在跑、并执行过 caddy trust，再点「测试连接」', 4600);
 }
+/* 判断浏览器所在系统：安装命令要跑在用户这台机器上，所以按 UA 判，不看服务端 */
+function userOS() {
+  const ua = navigator.userAgent || '';
+  const plat = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+  if (/^Win/i.test(plat) || /Windows/i.test(ua)) return 'windows';
+  if (/^Mac/i.test(plat) || /Macintosh|Mac OS X/i.test(ua)) return 'mac';
+  if (/Linux|X11|Android/i.test(plat) || /Linux|X11/i.test(ua)) return 'linux';
+  return 'other';
+}
+const OS_CMD = {
+  windows: { name: 'Windows', cmd: 'winget install --id CaddyServer.Caddy -e' },
+  mac: { name: 'macOS', cmd: 'brew install caddy' },
+  linux: { name: 'Linux', cmd: 'curl -sS https://webi.sh/caddy | sh' }
+};
+function installCmd(os) {
+  const o = os || userOS();
+  return OS_CMD[o] || null;
+}
 function lmMixCheck() {
   const box = $('#lmMix');
   if (!box) return null;
@@ -988,6 +1005,21 @@ function lmMixCheck() {
   } else {
     if (use) use.hidden = true;
     if (note) note.textContent = '';
+  }
+  const os = installCmd();
+  const nameEl = $('#lmOsName'), inst = $('#lmInstall'), alt = $('#lmOsAlt');
+  if (nameEl && inst) {
+    if (os) {
+      nameEl.textContent = os.name;
+      inst.textContent = os.cmd;
+      inst.dataset.copy = os.cmd;
+      const others = Object.keys(OS_CMD).filter(k => OS_CMD[k].name !== os.name);
+      if (alt) alt.textContent = '要装到模型那台机器上？' + others.map(k => OS_CMD[k].name + '：' + OS_CMD[k].cmd).join('　｜　');
+    } else {
+      nameEl.textContent = '未知系统';
+      inst.textContent = OS_CMD.windows.cmd;            // 兜底给一条，用户按需换
+      if (alt) alt.textContent = '其他：macOS ' + OS_CMD.mac.cmd + '　｜　Linux ' + OS_CMD.linux.cmd;
+    }
   }
   const ccmd = $('#lmCaddyCmd'), cport = $('#lmCaddyPort'), cuse = $('#lmCaddyUse');
   if (c && ccmd) {
@@ -1254,6 +1286,12 @@ function bindLM() {
   if (fu) fu.onclick = lmFwdToLocal;
   const cu = $('#lmCaddyUse');
   if (cu) cu.onclick = lmCaddyUse;
+  const ic = $('#lmInstallCopy');
+  if (ic) ic.onclick = async () => {
+    const t = ($('#lmInstall') || {}).textContent || '';
+    try { await navigator.clipboard.writeText(t); toast('已复制安装命令：' + t.slice(0, 40)); }
+    catch (e) { toast('复制失败，请手动选中复制'); }
+  };
   $$('#lmMix [data-copy]').forEach(el => {
     el.onclick = async () => {
       try { await navigator.clipboard.writeText(el.textContent.trim()); toast('已复制：' + el.textContent.trim().slice(0, 46)); }
@@ -3362,8 +3400,8 @@ function startLangWatch() {
 }
 
 window.__ANNOTATOR__ = {
-  version: '1.3.5',
-  mixedRisk, lmFwdCmd, lmFwdToLocal, lmCaddyCmd, lmCaddyUse,
+  version: '1.3.6',
+  mixedRisk, userOS, installCmd, lmFwdCmd, lmFwdToLocal, lmCaddyCmd, lmCaddyUse,
   lm: { get config() { return LM; }, translateItem, transcribeItem, transcribeAndTranslate, test: lmTest, models: lmModels },
   i18n: { get lang() { return uiLang; }, get label() { return uiLabel(uiLang); }, get pending() { return pendingLang; }, setUILang, setCustomLang, follow: followBrowserLang, pass: langPass, dict: I18N_EN, cache: () => i18nCache },
   get project() { return P; },
