@@ -193,6 +193,14 @@ main{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
 #lmMix b{color:var(--acc);font-weight:600}
 #lmMix ol{margin:6px 0 0 18px;padding:0}
 #lmMix li{margin:4px 0}
+#lmMix #lmCaddyCmd{white-space:pre-wrap;word-break:break-all;line-height:1.6}
+#lmMix .sub2{margin-top:7px;font-size:11.5px;color:var(--tx3)}
+#lmMix .osline{display:flex;gap:8px;align-items:center;margin:3px 0}
+#lmMix .osline span{width:56px;flex:none;color:var(--tx3);font-size:11.5px}
+#lmMix .osline code{flex:1;overflow-x:auto;white-space:nowrap}
+#lmMix .muted{margin-top:4px;color:var(--tx3);font-size:11.5px}
+#lmMix code[data-copy]{cursor:pointer}
+#lmMix code[data-copy]:hover{border-color:var(--acc)}
 #lmMix .fwdcmd{display:flex;gap:8px;align-items:center;margin:6px 0 0}
 #lmMix .fwdcmd code{flex:1;overflow-x:auto;white-space:nowrap;padding:5px 8px}
 #lmMix .fwdcmd .btn{flex:none}
@@ -354,15 +362,25 @@ body.ro .seg .txt,body.ro .seg .trt{color:var(--tx)}
     </div>
     <div id="lmMix" hidden>
       <b>被浏览器拦了：页面是 HTTPS，模型是 HTTP（混合内容）</b>
-      <div>Chrome 会直接拒掉 <code>https://…</code> 页面向 <code>http://192.168.x.x</code> 的请求，报 <code>Mixed Content</code>。四条路，任选一条：</div>
+      <div>Chrome 直接拒掉 <code>https://…</code> 页面向 <code>http://内网IP</code> 的请求，报 <code>Mixed Content</code>。下面任选一条：</div>
       <ol>
-        <li><b>SSH 转发到本机（最省事，不用改页面）</b>：在你这台电脑上执行下面这条，把远端模型端口映射到本机 127.0.0.1（HTTPS 页面访问 <code>127.0.0.1</code> 不受混合内容限制）
-          <div class="fwdcmd"><code id="lmFwdCmd"></code><button class="btn sm" id="lmFwdCopy">复制</button></div>
-          <div style="margin-top:5px">转发后点 <button class="btn sm" id="lmFwdUse">改用 127.0.0.1:<span id="lmFwdPort">9931</span></button>，地址栏换成 <code>http://127.0.0.1:…/v1</code>，再点「测试连接」。<span id="lmFwdNote"></span></div>
+        <li><b>Caddy 一行转发成 HTTPS（推荐，两种系统都有包）</b>
+          <div class="sub2">安装（选你系统的）</div>
+          <div class="osline"><span>macOS</span><code data-copy>brew install caddy</code></div>
+          <div class="osline"><span>Windows</span><code data-copy>choco install caddy</code></div>
+          <div class="osline"><span>Linux</span><code data-copy>curl -sS https://webi.sh/caddy | sh</code></div>
+          <div class="sub2">运行（把内网模型转成 <code>https://localhost</code>，并补上 CORS 响应头）</div>
+          <div class="fwdcmd"><code id="lmCaddyCmd" data-copy></code><button class="btn sm" id="lmCaddyCopy">复制</button></div>
+          <div style="margin-top:5px">首次跑完执行一次 <code data-copy>caddy trust</code>（自签根证书进系统库，不装浏览器会报证书错误）。然后点 <button class="btn sm" id="lmCaddyUse">改用 https://localhost:<span id="lmCaddyPort">9931</span></button>，再点「测试连接」。</div>
+          <div class="muted">Caddy 和模型跑在同一台机器时端口会撞，把下面命令里的 <code>-from</code> 端口改成 9443 再用。</div>
         </li>
-        <li><b>给模型上 HTTPS</b>：用 <code>mkcert</code> 签证书并在客户端装根证书，再 <code>llama-server --ssl-cert-file cert.pem --ssl-key-file key.pem</code>，地址填 <code>https://192.168.2.78:9931/v1</code>（自签但不装根证书不行，fetch 不认）。</li>
-        <li><b>把页面也变成 HTTP</b>：下载本文件，同目录跑 <code>python3 -m http.server 8000</code>（Windows <code>py -m http.server 8000</code>），开 <code>http://127.0.0.1:8000/index.html</code>。页面本身是 HTTP，局域网模型直连无阻。</li>
-        <li><b>给模型套一层 HTTPS 隧道</b>：Cloudflare Tunnel、<code>ngrok http 9931</code>、<code>tailscale serve</code> 都能把它变成 <code>https://…</code>，地址换成隧道地址即可。</li>
+        <li><b>SSH 转发（不用装东西，但要能 ssh 到那台机器）</b>
+          <div class="fwdcmd"><code id="lmFwdCmd" data-copy></code><button class="btn sm" id="lmFwdCopy">复制</button></div>
+          <div style="margin-top:5px">转发后点 <button class="btn sm" id="lmFwdUse">改用 127.0.0.1:<span id="lmFwdPort">9931</span></button>，再「测试连接」。</div>
+        </li>
+        <li><b>给模型自己上 HTTPS</b>：<code>mkcert</code> 签证书 + 客户端装根证书，<code>llama-server --ssl-cert-file cert.pem --ssl-key-file key.pem</code>，地址填 <code>https://192.168.2.78:9931/v1</code>（自签不装根证书，fetch 不认）。</li>
+        <li><b>把页面也变成 HTTP</b>：下载本文件，同目录跑 <code>python3 -m http.server 8000</code>（Windows <code>py -m http.server 8000</code>），开 <code>http://127.0.0.1:8000/index.html</code>。</li>
+        <li><b>外层套 HTTPS 隧道</b>：Cloudflare Tunnel、<code>ngrok http 9931</code>、<code>tailscale serve</code>，地址换成隧道给的那个 <code>https://</code>。</li>
       </ol>
       <div style="margin-top:6px">别用 <code>file://</code> 双击打开：不是可信上下文，「选目录」那套会失效。</div>
     </div>
@@ -925,6 +943,34 @@ function lmFwdToLocal() {
   lmMixCheck();
   toast('已改成 127.0.0.1:' + f.port + '，先确认 SSH 转发在跑，再点「测试连接」', 4200);
 }
+/* Caddy 一行：https://localhost:<port> → http://<内网>:<port> */
+function lmCaddyCmd(base) {
+  const b = String(base || '').trim();
+  if (!/^http:\/\//i.test(b)) return null;
+  let u;
+  try { u = new URL(b); } catch (e) { return null; }
+  if (/^(localhost|127\.0\.0\.1|0\.0\.0\.0|::1)/i.test(u.hostname)) return null;
+  const port = u.port || '80';
+  const up = 'http://' + u.hostname + ':' + port;
+  return {
+    port,
+    up,
+    use: 'https://localhost:' + port + '/v1',
+    cmd: 'caddy reverse-proxy --from https://localhost:' + port + ' --to ' + up +
+      ' --internal-certs --disable-redirects' +
+      ' --header-down "Access-Control-Allow-Origin: ' + location.origin + '"' +
+      ' --header-down "Access-Control-Allow-Private-Network: true"'
+  };
+}
+function lmCaddyUse() {
+  const f = lmCaddyCmd(String(($('#lmBase') || {}).value || LM.base || ''));
+  if (!f) return;
+  $('#lmBase').value = f.use;
+  LM.base = lmBase(f.use);
+  saveLM();
+  lmMixCheck();
+  toast('已换成 ' + f.use + '：确认 Caddy 在跑、并执行过 caddy trust，再点「测试连接」', 4600);
+}
 function lmMixCheck() {
   const box = $('#lmMix');
   if (!box) return null;
@@ -932,6 +978,7 @@ function lmMixCheck() {
   const risk = mixedRisk(val) || mixedRisk(LM.asrBase);
   box.hidden = !risk;
   const f = lmFwdCmd(val) || lmFwdCmd(LM.asrBase);
+  const c = lmCaddyCmd(val) || lmCaddyCmd(LM.asrBase);
   const cmd = $('#lmFwdCmd'), use = $('#lmFwdUse'), port = $('#lmFwdPort'), note = $('#lmFwdNote');
   if (f && cmd) {
     cmd.textContent = f.cmd;
@@ -941,6 +988,14 @@ function lmMixCheck() {
   } else {
     if (use) use.hidden = true;
     if (note) note.textContent = '';
+  }
+  const ccmd = $('#lmCaddyCmd'), cport = $('#lmCaddyPort'), cuse = $('#lmCaddyUse');
+  if (c && ccmd) {
+    ccmd.textContent = c.cmd;
+    if (cport) cport.textContent = c.port;
+    if (cuse) cuse.hidden = false;
+  } else if (cuse) {
+    cuse.hidden = true;
   }
   return risk;
 }
@@ -1197,6 +1252,14 @@ function bindLM() {
     catch (e) { toast('复制失败，请手动选中命令复制'); }
   };
   if (fu) fu.onclick = lmFwdToLocal;
+  const cu = $('#lmCaddyUse');
+  if (cu) cu.onclick = lmCaddyUse;
+  $$('#lmMix [data-copy]').forEach(el => {
+    el.onclick = async () => {
+      try { await navigator.clipboard.writeText(el.textContent.trim()); toast('已复制：' + el.textContent.trim().slice(0, 46)); }
+      catch (e) { toast('复制失败，请手动选中复制'); }
+    };
+  });
   $('#lmTest').onclick = lmTest;
   $('#lmSave').onclick = () => {
     readLmForm(); saveLM(); $('#lmModal').hidden = true;
@@ -3299,8 +3362,8 @@ function startLangWatch() {
 }
 
 window.__ANNOTATOR__ = {
-  version: '1.3.4',
-  mixedRisk, lmFwdCmd, lmFwdToLocal,
+  version: '1.3.5',
+  mixedRisk, lmFwdCmd, lmFwdToLocal, lmCaddyCmd, lmCaddyUse,
   lm: { get config() { return LM; }, translateItem, transcribeItem, transcribeAndTranslate, test: lmTest, models: lmModels },
   i18n: { get lang() { return uiLang; }, get label() { return uiLabel(uiLang); }, get pending() { return pendingLang; }, setUILang, setCustomLang, follow: followBrowserLang, pass: langPass, dict: I18N_EN, cache: () => i18nCache },
   get project() { return P; },

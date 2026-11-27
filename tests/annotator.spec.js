@@ -442,6 +442,32 @@ test.describe('界面语言 · 跟随浏览器与自定义', () => {
   });
 });
 
+test('Caddy 转发：面板给出安装命令，并按地址生成一行 reverse-proxy 命令', async ({ page }) => {
+  await openApp(page);
+  await page.locator('#btnModel').click();
+
+  const c = await page.evaluate(() => window.__ANNOTATOR__.lmCaddyCmd('http://192.168.2.78:9931/v1'));
+  expect(c.port).toBe('9931');
+  expect(c.use).toBe('https://localhost:9931/v1');
+  expect(c.cmd).toContain('caddy reverse-proxy --from https://localhost:9931 --to http://192.168.2.78:9931');
+  expect(c.cmd).toContain('--internal-certs --disable-redirects');
+  expect(c.cmd).toContain('Access-Control-Allow-Origin');            // 带本站来源，避免 CORS 失败
+  expect(c.cmd).toContain('Access-Control-Allow-Private-Network');
+  // 本机地址不需要转发
+  expect(await page.evaluate(() => window.__ANNOTATOR__.lmCaddyCmd('http://127.0.0.1:9931/v1'))).toBeNull();
+
+  // 安装命令三种系统都在面板里
+  await expect(page.locator('#lmMix')).toContainText('brew install caddy');
+  await expect(page.locator('#lmMix')).toContainText('choco install caddy');
+  await expect(page.locator('#lmMix')).toContainText('webi.sh/caddy');
+  await expect(page.locator('#lmMix')).toContainText('caddy trust');
+
+  await page.locator('#lmBase').fill('http://192.168.2.78:9931/v1');
+  await page.evaluate(() => window.__ANNOTATOR__.lmCaddyUse());
+  await expect(page.locator('#lmBase')).toHaveValue('https://localhost:9931/v1');
+  expect(await page.evaluate(() => window.__ANNOTATOR__.lm.config.base)).toBe('https://localhost:9931/v1');
+});
+
 test('SSH 转发：自动生成 -L 命令，并可一键把地址改到 127.0.0.1', async ({ page }) => {
   await openApp(page);
   await page.locator('#btnModel').click();
