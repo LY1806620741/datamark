@@ -180,6 +180,9 @@ main{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
 .aiMsg.bot{align-self:flex-start;background:#0f141c;border:1px solid var(--line);color:var(--tx2)}
 .aiMsg.err{align-self:flex-start;border-color:#5c3a30;color:var(--red);background:#1a1315}
 .aiMsg .cur{display:inline-block;width:6px;height:12px;background:var(--acc);vertical-align:-2px;animation:i18nPulse 1s infinite alternate}
+.aiMsg .aiReason{font-size:11px;line-height:1.5;color:var(--tx3);max-height:96px;overflow:auto;border-left:2px solid var(--line2);padding-left:7px;margin-bottom:6px;white-space:pre-wrap}
+.aiMsg .aiReason:before{content:"思考过程";display:block;font-size:10px;letter-spacing:.06em;color:var(--tx3);opacity:.7;margin-bottom:3px}
+.aiMsg .aiAns{white-space:pre-wrap}
 #aiChat .aifoot{display:flex;gap:6px;padding:8px 10px;border-top:1px solid var(--line);background:#10151d}
 #aiIn{flex:1;resize:none;background:#0b0f14;border:1px solid var(--line2);border-radius:6px;color:var(--tx);padding:6px 8px;font-size:12.5px;font-family:inherit;line-height:1.5;max-height:92px}
 #aiHint{padding:0 12px 8px;font-size:11px;color:var(--tx3);min-height:14px}
@@ -261,7 +264,7 @@ body.ro .seg .txt,body.ro .seg .trt{color:var(--tx)}
       <rect x="2.5" y="6" width="14" height="12" rx="2"/><path d="M16.5 10.5 21 8v8l-4.5-2.5"/>
     </svg>
     <h1>音视频标注台</h1>
-    <span class="tag">v1.3 · 纯前端 · 无后端</span>
+    <span class="tag">v1.4 · 纯前端 · 无后端</span>
   </div>
   <div class="proj">
     <span class="lbl">项目</span>
@@ -1110,6 +1113,106 @@ function extractJson(txt) {
   if (as >= 0 && ae > as) { try { return JSON.parse(t.slice(as, ae + 1)); } catch (err) { } }
   return null;
 }
+/* 从"还没写完"的 JSON 里把已完整的条目抠出来：边生成边用，不用等整段结束 */
+function jsonItems(txt) {
+  const out = [];
+  const t = String(txt || '');
+  const stack = [];
+  let inStr = false, esc = false, start = -1;
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === '\\') esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') { inStr = true; continue; }
+    if (c === '{') { if (!stack.length) start = i; stack.push(i); continue; }
+    if (c === '}') {
+      const open = stack.pop();
+      if (open == null) continue;
+      if (stack.length === 0 && start >= 0) start = -1;
+      try {
+        const obj = JSON.parse(t.slice(open, i + 1));
+        if (obj && obj.i != null && (obj.tr != null || obj.translation != null || obj.t != null) && obj.items == null) out.push(obj);
+      } catch (e) { }
+    }
+  }
+  return out;
+}
+/* 统一调模型：优先流式，拿到一段就回调一段；服务不支持流就退回一次性 JSON */
+async function lmChatText(messages, opt) {
+  const o = Object.assign({ stream: true, temperature: 0.2, timeout: 180000 }, opt || {});
+  const body = { model: LM.model || 'default', temperature: o.temperature, stream: !!o.stream, messages };
+  const res = await lmFetch('/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, o.timeout);
+  const ct = String((res.headers && res.headers.get('content-type')) || '');
+  if (ct.indexOf('event-stream') >= 0 && res.body && res.body.getReader) {
+    const rd = res.body.getReader(), dec = new TextDecoder();
+    let buf = '', acc = '';
+    while (true) {
+      const chunk = await rd.read();
+      if (chunk.done) break;
+      buf += dec.decode(chunk.value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (line.indexOf('data:') !== 0) continue;
+        const d = line.slice(5).trim();
+        if (!d || d === '[DONE]') continue;
+        try {
+          const j = JSON.parse(d);
+          const c0 = ((j.choices || [])[0] || {});
+          const piece = (c0.delta && (c0.delta.content || c0.delta.reasoning_content)) || (c0.message && c0.message.content) || c0.text || '';
+          if (piece) { acc += piece; if (o.onText) o.onText(acc); }
+        } catch (e) { }
+      }
+    }
+    if (!acc) acc = '';
+    return acc;
+  }
+  const js = await res.json();
+  const c0 = ((js.choices || [])[0] || {});
+  const txt = String((c0.message && c0.message.content) || c0.text || (js.message && js.message.content) || '');
+  if (o.onText) o.onText(txt);
+  return txt;
+}
+async function itemBlob(it) {
+  if (!it) return null;
+  if (it.mediaKey) { try { const b = await Store.get('blob', it.mediaKey); if (b) return b; } catch (e) { } }
+  if (it.src && /^data:|^blob:/i.test(it.src)) { try { const r = await fetch(it.src); return await r.blob(); } catch (e) { } }
+  return null;
+}
+
+function pickName(name, fallbackExt) {
+  const n = String(name || 'audio');
+  return /\.[a-z0-9]{2,5}$/i.test(n) ? n : (n + (fallbackExt || '.mp3'));
+}
+
+function splitSentences(txt, dur) {
+  const parts = String(txt || '').replace(/\s+/g, ' ').split(/(?<=[。！？!?])\s*/).map(x => x.trim()).filter(Boolean);
+  const total = dur && isFinite(dur) ? dur : parts.length * 4;
+  const per = parts.length ? total / parts.length : 0;
+  return parts.map((t, i) => ({ start: i * per, end: (i + 1) * per, text: t }));
+}
+
+function i18nProg(msg, ratio, busy) {
+  let el = $('#i18nProg');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'i18nProg';
+    el.innerHTML = '<span class="dot"></span><span class="tx"></span><span class="bar"><i></i></span>';
+    document.body.appendChild(el);
+  }
+  const tx = el.querySelector('.tx'), bar = el.querySelector('.bar i');
+  tx.textContent = msg || '';
+  bar.style.width = Math.round(Math.max(0, Math.min(1, ratio || 0)) * 100) + '%';
+  el.classList.toggle('on', !!msg);
+  if (!busy && msg) { clearTimeout(i18nProg._t); i18nProg._t = setTimeout(() => el.classList.remove('on'), 2600); }
+  return el;
+}
+
 async function translateItem(it, opt) {
   if (RO || !it || it.kind !== 'audio') return;
   if (lmNeedConfig()) return;
@@ -1126,81 +1229,55 @@ async function translateItem(it, opt) {
   const tgt = LANG_NAME[LM.lang] || '简体中文';
   const sys = '你是专业字幕翻译。把用户给出的 JSON 数组里每一项的 t 翻译成' + tgt +
     '。保持 i 与原文一一对应，逐条完整翻译，不合并、不省略、不加解释。只输出 JSON：{"items":[{"i":序号,"tr":"译文"}]}';
-  /* 条数不多时整批一次发过去：模型有完整上下文，术语和语气更统一。
-     条数过多（易被上下文长度或输出上限截断）或整批失败时，自动降级成小批。 */
+  /* 条数不多就整批一次发（术语、语气统一）；太多或整批失败再拆 12 条重试 */
   const ONE_SHOT_MAX = 40;
-  let batches = list.length <= ONE_SHOT_MAX ? [list] : chunkArr(list, 20);
-  let done = 0, ok = 0, fail = 0;
-  try {
-    for (let bi = 0; bi < batches.length; bi++) {
-      if (LM.cancel) { toast('已停止翻译'); break; }
-      const batch = batches[bi];
-      lmProg('翻译中 ' + done + '/' + list.length + ' 段…', true);
-      const payload = batch.map((s, k) => ({ i: k, t: (s.text || '').trim() }));
-      let out = null, lastErr = null;
-      for (let attempt = 0; attempt < 2 && !out; attempt++) {
-        try {
-          const res = await lmFetch('/chat/completions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              model: LM.model || 'default',
-              temperature: 0.2,
-              stream: false,
-              messages: [
-                { role: 'system', content: sys },
-                { role: 'user', content: JSON.stringify(payload) }
-              ]
-            })
-          }, 180000);
-          const js = await res.json();
-          const txt = (((js.choices || [])[0] || {}).message || {}).content || ((js.choices || [])[0] || {}).text || (js.message || {}).content || '';
-          out = extractJson(txt);
-          if (!out && attempt === 1) lastErr = new Error('模型没有返回可解析的 JSON');
-        } catch (e) { lastErr = e; if (String(e.message || '').indexOf('连不上') >= 0) throw e; }
-      }
-      if (!out && batch.length > 12) {
-        // 整批没解析出来：拆成 12 条一批重试，别把整批都算失败
-        for (const sub of chunkArr(batch, 12)) {
-          let o2 = null;
-          for (let a2 = 0; a2 < 2 && !o2; a2++) {
-            try {
-              const res2 = await lmFetch('/chat/completions', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  model: LM.model || 'default', temperature: 0.2, stream: false,
-                  messages: [
-                    { role: 'system', content: sys },
-                    { role: 'user', content: JSON.stringify(sub.map((x, k) => ({ i: k, t: (x.text || '').trim() }))) }
-                  ]
-                })
-              }, 180000);
-              o2 = extractJson(((js2 => (((js2.choices || [])[0] || {}).message || {}).content || ((js2.choices || [])[0] || {}).text || ''))(await res2.json()));
-            } catch (e) { if (String(e.message || '').indexOf('连不上') >= 0) throw e; }
-          }
-          if (!o2) { fail += sub.length; done += sub.length; continue; }
-          const arr2 = Array.isArray(o2) ? o2 : (o2.items || o2.data || []);
-          arr2.forEach((row, k) => {
-            const idx = Number(row && (row.i != null ? row.i : k));
-            const seg = sub[idx];
-            const tr = String((row && (row.tr || row.translation || row.text)) || '').trim();
-            if (seg && tr) { seg.tr = tr; ok++; }
-          });
-          done += sub.length;
-          lmProg('翻译中 ' + done + '/' + list.length + ' 段…', true);
-          renderSegs(); queueSave();
-        }
-        continue;
-      }
-      if (!out) { fail += batch.length; done += batch.length; continue; }
-      const items = Array.isArray(out) ? out : (out.items || out.data || []);
-      items.forEach((row, k) => {
-        const idx = Number(row && (row.i != null ? row.i : k));
+  const batches = list.length <= ONE_SHOT_MAX ? [list] : chunkArr(list, 20);
+  let done = 0, ok = 0, fail = 0, lastErr = null;
+
+  const run = async (batch) => {
+    const applied = new Set();
+    let okN = 0;
+    const sysMsgs = [{ role: 'system', content: sys }, { role: 'user', content: JSON.stringify(batch.map((x, i) => ({ i, t: (x.text || '').trim() }))) }];
+    const take = (acc) => {
+      jsonItems(acc).forEach(row => {
+        const idx = Number(row.i);
+        if (!isFinite(idx) || idx < 0 || idx >= batch.length || applied.has(idx)) return;
         const seg = batch[idx];
-        const tr = String((row && (row.tr || row.translation || row.text)) || '').trim();
-        if (seg && tr) { seg.tr = tr; ok++; }
+        const tr = String(row.tr != null ? row.tr : (row.translation != null ? row.translation : row.t) || '').trim();
+        if (!seg || !tr) return;
+        seg.tr = tr; applied.add(idx); okN++;
       });
-      done += batch.length;
+      if (applied.size) {
+        lmProg('翻译中 ' + (done + applied.size) + '/' + list.length + ' 段…', true);
+        renderSegs();
+      }
+    };
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await lmChatText(sysMsgs, { stream: true, temperature: 0.2, timeout: 180000, onText: take });
+        if (applied.size) return { ok: okN, got: true };
+      } catch (e) {
+        lastErr = e;
+        if (String(e.message || '').indexOf('连不上') >= 0) throw e;
+      }
+    }
+    return { ok: okN, got: okN > 0 };
+  };
+
+  try {
+    for (const batch of batches) {
+      if (LM.cancel) { toast('已停止翻译'); break; }
+      lmProg('翻译中 ' + done + '/' + list.length + ' 段…', true);
+      const r = await run(batch);
+      if (!r.got && batch.length > 12) {
+        for (const sub of chunkArr(batch, 12)) {
+          if (LM.cancel) break;
+          const r2 = await run(sub);
+          ok += r2.ok; fail += sub.length - r2.ok; done += sub.length;
+        }
+      } else {
+        ok += r.ok; fail += batch.length - r.ok; done += batch.length;
+      }
       renderSegs(); queueSave();
     }
     const msg = '翻译完成：' + ok + ' 段' + (fail ? '，' + fail + ' 段模型没给译文（可重试）' : '');
@@ -1218,23 +1295,6 @@ async function translateItem(it, opt) {
   }
 }
 
-/* ---------- 转写：音频 → 文稿 ---------- */
-async function itemBlob(it) {
-  if (!it) return null;
-  if (it.mediaKey) { try { const b = await Store.get('blob', it.mediaKey); if (b) return b; } catch (e) { } }
-  if (it.src && /^data:|^blob:/i.test(it.src)) { try { const r = await fetch(it.src); return await r.blob(); } catch (e) { } }
-  return null;
-}
-function pickName(name, fallbackExt) {
-  const n = String(name || 'audio');
-  return /\.[a-z0-9]{2,5}$/i.test(n) ? n : (n + (fallbackExt || '.mp3'));
-}
-function splitSentences(txt, dur) {
-  const parts = String(txt || '').replace(/\s+/g, ' ').split(/(?<=[。！？!?])\s*/).map(x => x.trim()).filter(Boolean);
-  const total = dur && isFinite(dur) ? dur : parts.length * 4;
-  const per = parts.length ? total / parts.length : 0;
-  return parts.map((t, i) => ({ start: i * per, end: (i + 1) * per, text: t }));
-}
 async function transcribeItem(it, mode) {
   if (RO || !it || it.kind !== 'audio') return;
   if (lmNeedConfig()) return;
@@ -1442,7 +1502,7 @@ const I18N_EN = {
   '已自动保存': 'Saved',
   '已写入目录': 'Written to folder',
   '＋ 当前位置加段': '＋ Add at cursor',
-  'v1.3 · 纯前端 · 无后端': 'v1.3 · pure front-end · no backend',
+  'v1.4 · 纯前端 · 无后端': 'v1.4 · pure front-end · no backend',
   '数据只保存在本机浏览器，不上传任何服务器。媒体文件存在本地库中，刷新即可继续。': 'Saved in this browser only — nothing is uploaded. Media stays in the local store; reload to continue.',
   '检测存储…': 'Checking storage…',
   '没有符合筛选条件的段落': 'No segments match the filter',
@@ -1475,6 +1535,8 @@ try { i18nCache = JSON.parse(localStorage.getItem(UI_CACHE_KEY) || '{}') || {}; 
 const LANG_TRACK = new WeakMap(); /* 节点 -> { text:rec, attrs:{名字:rec} } 便于切回中文 */
 const LANG_RECS = [];             /* 已替换过的记录，切换语言时用来还原 */
 let langJob = 0, langPending = 0;
+let langBusy = false, langDirty = false;
+let langApplying = false;
 
 function uiLabel(code) {
   if (code === 'zh') return '中文';
@@ -1594,45 +1656,35 @@ function langApply(todo, results) {
 }
 
 async function langTranslateBatch(list) {
-  const user = JSON.stringify(list.map((x, i) => ({ i, t: x.raw })));
-  const body = {
-    model: LM.model || 'default', temperature: 0, stream: false,
-    messages: [
-      { role: 'system', content: '你是界面本地化翻译。这是一款「音视频标注台」的界面文案（录音校对、视频画框打码、标注导出），逐条翻译成' + uiLangName(uiLang) +
-        '。要求：按钮用简短动宾或名词短语；同一条内保持一致术语（如 标注=annotation、段落=segment、打码=blur/mask、文稿=transcript）；保留 {x} 之类的占位符原样；不要加句号、不要解释、不要合并或省略任何一条。只输出 JSON：{"items":[{"i":序号,"tr":"译文"}]}' },
-      { role: 'user', content: user }
-    ]
+  const out = list.map(() => '');
+  const sys = '你是界面本地化翻译。这是一款「音视频标注台」的界面文案（录音校对、视频画框打码、标注导出），逐条翻译成' + uiLangName(uiLang) +
+    '。要求：按钮用简短动宾或名词短语；同一条内保持一致术语（如 标注=annotation、段落=segment、打码=blur/mask、文稿=transcript）；保留 {x} 之类的占位符原样；不要加句号、不要解释、不要合并或省略任何一条。只输出 JSON：{"items":[{"i":序号,"tr":"译文"}]}';
+  const msgs = [
+    { role: 'system', content: sys },
+    { role: 'user', content: JSON.stringify(list.map((x, i) => ({ i, t: x.raw }))) }
+  ];
+  /* 模型一边生成一边回填，界面就能看到逐条变化，而不是等全部结束 */
+  const take = (acc) => {
+    jsonItems(acc).forEach(row => {
+      const i = Number(row.i);
+      if (!isFinite(i) || i < 0 || i >= list.length || out[i]) return;
+      const tr = String(row.tr != null ? row.tr : (row.translation != null ? row.translation : '') || '').trim();
+      if (!tr) return;
+      out[i] = tr;
+      langApply([list[i]], [tr]);
+    });
   };
-  const res = await lmFetch('/chat/completions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }, 90000);
-  const js = await res.json();
-  const msg = (js.choices && js.choices[0] && (js.choices[0].message || {})) || {};
-  const txt = msg.content || (js.message && js.message.content) || '';
+  const txt = await lmChatText(msgs, { stream: true, temperature: 0, timeout: 120000, onText: take });
   const obj = extractJson(txt);
   const arr = Array.isArray(obj) ? obj : (obj && (obj.items || obj.t)) || [];
-  return list.map((x, i) => {
-    const hit = arr.find(o => Number(o.i) === i);
-    return hit ? String(hit.tr || hit.t || '').trim() : '';
+  arr.forEach(row => {
+    const i = Number(row && row.i);
+    if (!isFinite(i) || i < 0 || i >= list.length || out[i]) return;
+    const tr = String((row.tr != null ? row.tr : (row.translation != null ? row.translation : row.t)) || '').trim();
+    if (tr) { out[i] = tr; langApply([list[i]], [tr]); }
   });
+  return out;
 }
-
-/* 界面翻译的进度提示（小胶囊，固定在底部，不挡操作） */
-function i18nProg(msg, ratio, busy) {
-  let el = $('#i18nProg');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'i18nProg';
-    el.innerHTML = '<span class="dot"></span><span class="tx"></span><span class="bar"><i></i></span>';
-    document.body.appendChild(el);
-  }
-  const tx = el.querySelector('.tx'), bar = el.querySelector('.bar i');
-  tx.textContent = msg || '';
-  bar.style.width = Math.round(Math.max(0, Math.min(1, ratio || 0)) * 100) + '%';
-  el.classList.toggle('on', !!msg);
-  if (!busy && msg) { clearTimeout(i18nProg._t); i18nProg._t = setTimeout(() => el.classList.remove('on'), 2600); }
-  return el;
-}
-let langBusy = false, langDirty = false;
-let langApplying = false;
 
 async function langPass() {
   if (uiLang === 'zh') { langRestoreAll(); return; }
@@ -1655,7 +1707,7 @@ async function langPass() {
       // 先整批发一次（界面文案短，上下文越长术语越统一）；缺的再拆小批补
       try {
         langApplying = true;
-        langApply(queue, await langTranslateBatch(queue));
+        await langTranslateBatch(queue);
       } catch (e) { /* 整批失败就走下面的分批 */ }
       finally { langApplying = false; }
       done = queue.filter(q => String(i18nLookup(q.raw, uiLang) || '').trim()).length;
@@ -1666,7 +1718,7 @@ async function langPass() {
         const slice = rest.slice(i, i + 12);
         try {
           langApplying = true;
-          langApply(slice, await langTranslateBatch(slice));
+          await langTranslateBatch(slice);
         } catch (e) { failed += slice.length; }
         finally { langApplying = false; }
         const nowDone = queue.filter(q => String(i18nLookup(q.raw, uiLang) || '').trim()).length;
@@ -3512,13 +3564,28 @@ async function aiSend() {
   aiBusy = true;
   const send = $('#aiSend'); if (send) send.disabled = true;
   const bubble = aiSay('bot', '');
+  const reasonEl = document.createElement('div');
+  reasonEl.className = 'aiReason';
+  reasonEl.hidden = true;
+  const ansEl = document.createElement('div');
+  ansEl.className = 'aiAns';
+  bubble.append(reasonEl, ansEl);
   const cur = document.createElement('span');
   cur.className = 'cur';
-  bubble.appendChild(cur);
-  let acc = '';
+  ansEl.textContent = '思考中…';
+  ansEl.appendChild(cur);
+  let acc = '', think = '';
+  /* 等第一个字的时候也有东西看：计时，不是空白 */
+  const t0 = Date.now();
+  const timer = setInterval(() => {
+    if (!acc) ansEl.textContent = '思考中 ' + Math.round((Date.now() - t0) / 1000) + 's…';
+    ansEl.appendChild(cur);
+  }, 500);
+  const b0 = $('#aiMsgs'); if (b0) b0.scrollTop = b0.scrollHeight;
   const paint = () => {
-    bubble.textContent = acc;
-    bubble.appendChild(cur);
+    if (think) { reasonEl.hidden = false; reasonEl.textContent = think; }
+    ansEl.textContent = acc;
+    ansEl.appendChild(cur);
     const b = $('#aiMsgs'); if (b) b.scrollTop = b.scrollHeight;
   };
   try {
@@ -3545,7 +3612,11 @@ async function aiSend() {
           try {
             const j = JSON.parse(d);
             const c0 = ((j.choices || [])[0] || {});
-            const t = (c0.delta && c0.delta.content) || '';
+            const dl = c0.delta || c0.message || {};
+            /* 推理模型（Qwen3 等）先吐 reasoning_content，正文最后才来：
+               把它当"思考过程"实时显示，否则整段时间屏幕上是空白的 */
+            if (dl.reasoning_content) { think += dl.reasoning_content; paint(); }
+            const t = dl.content || '';
             if (t) { acc += t; paint(); }
           } catch (e) { }
         }
@@ -3553,12 +3624,21 @@ async function aiSend() {
     } else {
       const js = await res.json();
       const c0 = ((js.choices || [])[0] || {});
-      acc = String((c0.message && c0.message.content) || c0.text || (js.message && js.message.content) || '').trim();
+      const m = c0.message || js.message || {};
+      think = String(m.reasoning_content || '');
+      acc = String(m.content || c0.text || '').trim();
     }
+    clearInterval(timer);
     if (cur.parentNode) cur.remove();
-    if (!acc.trim()) { bubble.className = 'aiMsg err'; bubble.textContent = '模型没返回内容：换个模型，或看看服务端日志'; }
-    else { bubble.className = 'aiMsg bot'; bubble.textContent = acc; aiHist.push({ role: 'assistant', content: acc }); }
+    if (!acc.trim() && !think.trim()) { bubble.className = 'aiMsg err'; bubble.textContent = '模型没返回内容：换个模型，或看看服务端日志'; }
+    else {
+      bubble.className = 'aiMsg bot';
+      ansEl.textContent = acc || '（模型只给了思考过程，没有正文）';
+      if (think) { reasonEl.hidden = false; reasonEl.textContent = think; }
+      if (acc) aiHist.push({ role: 'assistant', content: acc });
+    }
   } catch (e) {
+    clearInterval(timer);
     if (cur.parentNode) cur.remove();
     bubble.className = 'aiMsg err';
     bubble.textContent = String(e.message || e);
@@ -3668,10 +3748,10 @@ function startLangWatch() {
 }
 
 window.__ANNOTATOR__ = {
-  version: '1.4.0',
+  version: '1.4.1',
   mixedRisk, userOS, installCmd, lmFwdCmd, lmFwdToLocal, lmCaddyCmd, lmCaddyUse,
   ai: { toggle: aiToggle, send: aiSend, newChat: aiNew, get hist() { return aiHist; }, say: aiSay },
-  lm: { get config() { return LM; }, translateItem, transcribeItem, transcribeAndTranslate, test: lmTest, models: lmModels },
+  lm: { get config() { return LM; }, translateItem, transcribeItem, transcribeAndTranslate, test: lmTest, models: lmModels, jsonItems, chat: lmChatText },
   i18n: { get lang() { return uiLang; }, get label() { return uiLabel(uiLang); }, get pending() { return pendingLang; }, setUILang, setCustomLang, follow: followBrowserLang, pass: langPass, dict: I18N_EN, cache: () => i18nCache },
   get project() { return P; },
   isRO: () => RO,

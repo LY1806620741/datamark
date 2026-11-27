@@ -597,3 +597,42 @@ test('自定义语言：输入 Français 后由模型翻译界面并记住标签
   await expect(page.locator('#btnLang')).toHaveText('AI');
   await expect(page.locator('h1')).toContainText('MOCK:', { timeout: 15000 });
 });
+
+test('半截 JSON 增量解析：生成中就能拿到已完成的条目', async ({ page }) => {
+  await openApp(page);
+  const res = await page.evaluate(() => {
+    const f = window.__ANNOTATOR__.lm.jsonItems;
+    return {
+      partial: f('{"items":[{"i":0,"tr":"甲"},{"i":1,"tr":"乙'),
+      full: f('{"items":[{"i":0,"tr":"甲说\\"好\\""},{"i":1,"tr":"乙"}]}'),
+      plain: f('随便一段话，没有 json')
+    };
+  });
+  expect(res.partial).toHaveLength(1);
+  expect(res.partial[0]).toMatchObject({ i: 0, tr: '甲' });
+  expect(res.full).toHaveLength(2);
+  expect(res.full[0].tr).toBe('甲说"好"');
+  expect(res.plain).toHaveLength(0);
+});
+
+test('AI 对话：推理模型先吐思考过程时，气泡在生成中就有内容', async ({ page }) => {
+  await openApp(page);
+  await page.evaluate(() => localStorage.setItem('annotator.lm.v1', JSON.stringify({
+    base: 'http://127.0.0.1:4180/slowv1/v1', key: '', model: 'slow-reasoner', asr: '', asrBase: '', asrLang: '', lang: 'zh'
+  })));
+  await page.reload();
+  await expect(page.locator('#itemList .item')).toHaveCount(2);
+  await page.locator('#aiFab').click();
+  await page.fill('#aiIn', '你好');
+  await page.locator('#aiSend').click();
+
+  // 正文还没来，思考过程应该已经在页面上滚动出现（不是空白等到底）
+  const reason = page.locator('.aiMsg.bot .aiReason').last();
+  await expect(reason).toBeVisible({ timeout: 3000 });
+  await expect(reason).not.toHaveText('', { timeout: 3000 });
+  await expect(page.locator('.aiMsg.bot .aiAns').last()).toContainText('思考中', { timeout: 2000 });
+
+  // 最终正文照常落在答案区，思考区保留
+  await expect(page.locator('.aiMsg.bot .aiAns').last()).toHaveText('好的，这是正文', { timeout: 10000 });
+  await expect(reason).toContainText('先想一下');
+});

@@ -42,6 +42,26 @@ function readBody(req) {
 /* ---------- 假模型服务（OpenAI 兼容） ---------- */
 async function fakeModel(req, res, path) {
   if (req.method === 'OPTIONS') { res.writeHead(204, CORS).end(); return true; }
+  // 慢速 + 先吐 reasoning_content 再吐正文：模拟推理模型，验证"生成中就显示"
+  if (path.indexOf('/slowv1/') === 0) {
+    if (path.slice(-7) === '/models') { json(res, 200, { object: 'list', data: [{ id: 'slow-reasoner' }] }); return true; }
+    if (path.slice(-17) === '/chat/completions' && req.method === 'POST') {
+      await readBody(req);
+      res.writeHead(200, Object.assign({ 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' }, CORS));
+      const think = ['先', '想', '一', '下'];
+      const answer = ['好', '的', '，', '这', '是', '正', '文'];
+      const write = (delta) => res.write('data: ' + JSON.stringify({ choices: [{ index: 0, delta }] }) + '\n\n');
+      let k = 0;
+      const t = setInterval(() => {
+        if (k < think.length) write({ reasoning_content: think[k] });
+        else if (k < think.length + answer.length) write({ content: answer[k - think.length] });
+        else { res.write('data: [DONE]\n\n'); clearInterval(t); res.end(); }
+        k++;
+      }, 150);
+      return true;
+    }
+    return true;
+  }
   if (path === '/v1/models') {
     json(res, 200, { object: 'list', data: [{ id: 'mock-llama', object: 'model' }, { id: 'mock-translator', object: 'model' }] });
     return true;
@@ -79,6 +99,20 @@ async function fakeModel(req, res, path) {
       json(res, 200, { id: 'mock', object: 'chat.completion', model: 'mock-llama', choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: plain } }] });
       return true;
     }
+    // 条目型翻译：带 stream:true 时逐条吐 SSE，验证"边生成边回填"
+    let wantStream = false;
+    try { wantStream = !!JSON.parse(raw).stream; } catch (e) { }
+    if (wantStream && items.length) {
+      res.writeHead(200, Object.assign({ 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' }, CORS));
+      res.write('data: ' + JSON.stringify({ choices: [{ index: 0, delta: { content: '{"items":[' } }] }) + '\n\n');
+      items.forEach((it, k) => {
+        res.write('data: ' + JSON.stringify({ choices: [{ index: 0, delta: { content: (k ? ',' : '') + JSON.stringify(it) } }] }) + '\n\n');
+      });
+      res.write('data: ' + JSON.stringify({ choices: [{ index: 0, delta: { content: ']}' } }] }) + '\n\n');
+      res.write('data: [DONE]\n\n');
+      res.end();
+      return true;
+    }
     json(res, 200, {
       id: 'mock', object: 'chat.completion', model: 'mock-llama',
       choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify({ items }) } }]
@@ -101,7 +135,7 @@ createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://localhost');
     const path = decodeURIComponent(url.pathname);
-    if (path.startsWith('/v1/') && await fakeModel(req, res, path)) return;
+    if ((path.startsWith('/v1/') || path.startsWith('/slowv1/')) && await fakeModel(req, res, path)) return;
 
     const rel = decodeURIComponent(path === '/' ? '/index.html' : path);
     const file = normalize(join(ROOT, rel));

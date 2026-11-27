@@ -39,14 +39,16 @@
 | 双服务地址（可选） | 「转写服务地址」可空，留空沿用主地址；支持 LLM(8080) + ASR(8081) 分开部署 |
 | 转写（可选） | 音频页「转写 ▾」：把音频 POST 到 `/audio/transcriptions`（`verbose_json` + 段级时间戳，400 时降级 `json`），按 segments 建段，可替换或追加（保留原说话人） |
 | 界面语言（可选模型） | 右上语言按钮三档：中文 / English / AI 翻译（AI 档=模型翻译，浏览器语言非中英时直接用、否则 prompt 输入任意语言名）；首访按 navigator.language 判定，非内置语言先中文并记 pending，连上模型后自动切；中英内置词条表（约 50 条）→ 未命中且长度 ≤150 字的文案批量送模型翻译，结果按语言缓存到 localStorage；MutationObserver 在重渲染后自动补译；切回中文按原值还原 |
-| 内网安全 | https 公网页访问本机/局域网时带 `targetAddressSpace:'local'`，兼容 Chrome 142+ 本地网络权限；文案明确 CORS / `OLLAMA_ORIGINS` / file:// 限制 |
+| AI 对话（可选） | 右下角悬浮球可拖动、记住位置；点开即聊，走同一个 `/v1/chat/completions`，`stream:true` 优先 SSE |
+| 边生成边显示 | 对话/翻译/界面翻译一律流式：一是首字未到先显示「思考中 Ns」计时，不留空白；二是把推理模型的 `reasoning_content` 当「思考过程」实时显示；三是翻译用增量 JSON 解析（`jsonItems`），模型吐一条就回填一条，不等整段结束 |
+| 内网安全 | 公网 https 页面访问本机/局域网 http 会被混合内容拦：面板识别并给 SSH `-L` / Caddy 一行转发与按系统安装命令；不要把 loopback 谎报成局域网（会被 PNA 拦） |
 | 隐私脱敏 | 标题通用化、示例数据为通用功能讲解会议、无案号/姓名/公司/钱包/git hash；仓库内同为示例数据 |
 | 首次引导 | 三步聚光灯引导（导入 → 标注 → 导出），首次自动出现，完成后写入 localStorage，不再打扰；右上「引导」可重放 |
 | 目录标注 + 即时写入 | `showDirectoryPicker` 授权目录 → 扫描媒体 → 恢复 `annotations.json` → 每次改动防抖 1.2s 覆盖写入同一文件；`pagehide`/`visibilitychange` 立即落盘 |
 | 单一数据文件 | 目录里只维护 `annotations.json`（+ 自动生成的 `README.md`），不产生每项一文件的碎片 |
 | 只读预览包 | 用"页面初始模板 + 内嵌 JSON + data URL 媒体"生成独立 HTML：`__BUNDLE__` 模式启动，隐藏全部编辑入口、字段只读、可播放可看标注 |
 | GitHub Pages | `pages.yml` 打包 `index.html` + 文档到 `_site` 后发布 |
-| GitHub Actions 测试 | `ci.yml` 跑 Playwright 端到端 12 条用例（含 mock 的 `/v1` 模型接口） |
+| GitHub Actions 测试 | `ci.yml` 跑 Playwright 端到端 26 条用例（含 mock 的 `/v1` 模型接口） |
 
 ## 三、验收标准
 
@@ -55,6 +57,7 @@
 - [x] 文稿修改、重点标记、译文刷新后仍在（IndexedDB）
 - [x] SRT / TXT / Markdown 导出内容正确
 - [x] 视频拖框生成区域，起止时间可改，截图可导出
+- [x] 对话与翻译边生成边回填：推理模型先出思考过程时，气泡已有内容；半截 JSON 也能先拿到已完成条目
 - [x] **打码像素级验证**：开关「显示标注」两帧差异像素应落在框内
 - [x] 目录连接后只出现 `README.md` + `annotations.json` 两个文件，编辑后内容即时更新
 - [x] 只读预览包离线可打开、无编辑入口、`contenteditable=false`、媒体可播
