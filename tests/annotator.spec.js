@@ -401,6 +401,38 @@ test('转写走独立的转写服务地址（与对话模型不同端口）', as
   expect(saved.asrBase).toBe(BASE + '/v1');
 });
 
+test('AI 对话：悬浮球可拖动并记住位置，点击展开后可流式问答', async ({ page }) => {
+  await openApp(page);
+  await connectMockModel(page);
+  const fab = page.locator('#aiFab');
+  await expect(fab).toBeVisible();
+  await expect(fab.locator('.live')).toBeVisible();          // 连上模型后点亮小绿点
+
+  // 拖动：位置写进 localStorage，且不误触展开
+  const box = await fab.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x - 140, box.y - 80, { steps: 6 });
+  await page.mouse.up();
+  await expect(page.locator('#aiChat')).toBeHidden();
+  const pos = await page.evaluate(() => JSON.parse(localStorage.getItem('annotator.fab.v1') || 'null'));
+  expect(pos && pos.x).toBeGreaterThan(0);
+
+  // 单击展开，发一条，验证 SSE 流式回复被拼起来
+  await fab.click();
+  await expect(page.locator('#aiChat')).toBeVisible();
+  await page.fill('#aiIn', '这段怎么翻？');
+  await page.locator('#aiSend').click();
+  await expect(page.locator('.aiMsg.me')).toContainText('这段怎么翻');
+  await expect(page.locator('.aiMsg.bot').last()).toContainText('MOCK:', { timeout: 20000 });
+  await expect(page.locator('.aiMsg.bot').last()).toContainText('假回复');
+
+  // 新对话清空上文
+  await page.locator('#aiNew').click();
+  await expect(page.locator('.aiMsg.me')).toHaveCount(0);
+  expect((await page.evaluate(() => window.__ANNOTATOR__.ai.hist.length))).toBe(0);
+});
+
 test('界面语言：内置英文词条，文稿内容不动，切回中文完整还原', async ({ page }) => {
   await openApp(page);
   await page.locator('#btnLang').click();
@@ -523,7 +555,7 @@ test('混合内容识别：HTTPS 页面 + HTTP 局域网地址会被标红提示
   expect(risk.plain).toBeNull();                                       // 页面本身是 http 就不算混合内容
   expect(risk.tls).toBeNull();                                         // 模型上了 TLS 也没事
   expect(risk.empty).toBeNull();
-  expect(await page.evaluate(() => window.__ANNOTATOR__.version)).toMatch(/^1\.3\./);
+  expect(await page.evaluate(() => window.__ANNOTATOR__.version)).toMatch(/^1\.(3|4)\.\d+$/);
 });
 
 test('界面翻译：显示进度并最终收敛到「完成」', async ({ page }) => {

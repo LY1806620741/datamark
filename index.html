@@ -164,6 +164,25 @@ main{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
 .menu button:hover{background:#252c3a;color:#fff}
 .menu .sep{height:1px;background:var(--line);margin:4px 2px}
 .menu .t{font-size:10.5px;color:var(--tx3);padding:5px 9px 3px;letter-spacing:.4px}
+#aiFab{position:fixed;right:22px;bottom:22px;width:48px;height:48px;border-radius:50%;background:var(--acc);color:#131820;display:grid;place-items:center;font-weight:700;font-size:13px;letter-spacing:.5px;cursor:grab;z-index:96;box-shadow:0 10px 26px #00000099;user-select:none;touch-action:none;transition:transform .12s,box-shadow .12s}
+#aiFab:hover{transform:scale(1.06)}
+#aiFab.drag{cursor:grabbing;transform:scale(1.04)}
+#aiFab.off{background:#2c3441;color:var(--tx3);box-shadow:0 6px 18px #0006}
+#aiFab .live{position:absolute;right:4px;top:4px;width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 2px #131820}
+#aiChat{position:fixed;width:min(384px,92vw);height:min(524px,72vh);background:#141821;border:1px solid var(--line2);border-radius:10px;box-shadow:0 24px 64px #000000b0;z-index:97;display:flex;flex-direction:column;overflow:hidden}
+#aiChat[hidden]{display:none}
+#aiChat .aihead{display:flex;align-items:center;gap:6px;padding:8px 10px 8px 12px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--tx)}
+#aiChat .aihead b{font-weight:600}
+#aiChat .aihead .grow{flex:1}
+#aiMsgs{flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px;font-size:12.5px;line-height:1.7}
+.aiMsg{max-width:87%;padding:7px 10px;border-radius:9px;white-space:pre-wrap;word-break:break-word}
+.aiMsg.me{align-self:flex-end;background:#2b3342;color:var(--tx)}
+.aiMsg.bot{align-self:flex-start;background:#0f141c;border:1px solid var(--line);color:var(--tx2)}
+.aiMsg.err{align-self:flex-start;border-color:#5c3a30;color:var(--red);background:#1a1315}
+.aiMsg .cur{display:inline-block;width:6px;height:12px;background:var(--acc);vertical-align:-2px;animation:i18nPulse 1s infinite alternate}
+#aiChat .aifoot{display:flex;gap:6px;padding:8px 10px;border-top:1px solid var(--line);background:#10151d}
+#aiIn{flex:1;resize:none;background:#0b0f14;border:1px solid var(--line2);border-radius:6px;color:var(--tx);padding:6px 8px;font-size:12.5px;font-family:inherit;line-height:1.5;max-height:92px}
+#aiHint{padding:0 12px 8px;font-size:11px;color:var(--tx3);min-height:14px}
 #toast{position:fixed;left:50%;bottom:34px;transform:translate(-50%,14px);background:#232a37;color:var(--tx);border:1px solid var(--line2);border-left:3px solid var(--acc);border-radius:5px;padding:8px 14px;font-size:12.5px;opacity:0;pointer-events:none;transition:.22s;z-index:90;max-width:80vw}
 #toast.on{opacity:1;transform:translate(-50%,0)}
 #i18nProg{position:fixed;left:50%;bottom:66px;transform:translate(-50%,10px);display:flex;align-items:center;gap:8px;background:#1b212c;color:var(--tx2);border:1px solid var(--line2);border-radius:20px;padding:6px 14px;font-size:12px;z-index:95;opacity:0;pointer-events:none;transition:.2s}
@@ -338,6 +357,13 @@ body.ro .seg .txt,body.ro .seg .trt{color:var(--tx)}
   </div>
 </div>
 
+<div id="aiFab" class="edit-only" title="和 AI 对话"><span>AI</span><i class="live" hidden></i></div>
+<div id="aiChat" hidden>
+  <div class="aihead"><b>AI 助手</b><button class="btn sm" id="aiNew">新对话</button><span class="grow"></span><button class="btn sm" id="aiClose">关闭</button></div>
+  <div id="aiMsgs" data-no-i18n></div>
+  <div class="aifoot"><textarea id="aiIn" rows="1" placeholder="问点什么…（Enter 发送，Shift+Enter 换行）"></textarea><button class="btn pri" id="aiSend">发送</button></div>
+  <div id="aiHint"></div>
+</div>
 <div class="modal" id="lmModal" hidden>
   <div class="box">
     <button class="btn sm close" id="lmClose">关闭</button>
@@ -809,6 +835,7 @@ function loadLM() {
 }
 function saveLM() {
   try { localStorage.setItem(LM_KEY, JSON.stringify(LM)); } catch (e) { }
+  try { aiSync(); } catch (e) { }
 }
 loadLM();
 
@@ -1099,7 +1126,10 @@ async function translateItem(it, opt) {
   const tgt = LANG_NAME[LM.lang] || '简体中文';
   const sys = '你是专业字幕翻译。把用户给出的 JSON 数组里每一项的 t 翻译成' + tgt +
     '。保持 i 与原文一一对应，逐条完整翻译，不合并、不省略、不加解释。只输出 JSON：{"items":[{"i":序号,"tr":"译文"}]}';
-  const batches = chunkArr(list, 12);
+  /* 条数不多时整批一次发过去：模型有完整上下文，术语和语气更统一。
+     条数过多（易被上下文长度或输出上限截断）或整批失败时，自动降级成小批。 */
+  const ONE_SHOT_MAX = 40;
+  let batches = list.length <= ONE_SHOT_MAX ? [list] : chunkArr(list, 20);
   let done = 0, ok = 0, fail = 0;
   try {
     for (let bi = 0; bi < batches.length; bi++) {
@@ -1128,6 +1158,39 @@ async function translateItem(it, opt) {
           out = extractJson(txt);
           if (!out && attempt === 1) lastErr = new Error('模型没有返回可解析的 JSON');
         } catch (e) { lastErr = e; if (String(e.message || '').indexOf('连不上') >= 0) throw e; }
+      }
+      if (!out && batch.length > 12) {
+        // 整批没解析出来：拆成 12 条一批重试，别把整批都算失败
+        for (const sub of chunkArr(batch, 12)) {
+          let o2 = null;
+          for (let a2 = 0; a2 < 2 && !o2; a2++) {
+            try {
+              const res2 = await lmFetch('/chat/completions', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  model: LM.model || 'default', temperature: 0.2, stream: false,
+                  messages: [
+                    { role: 'system', content: sys },
+                    { role: 'user', content: JSON.stringify(sub.map((x, k) => ({ i: k, t: (x.text || '').trim() }))) }
+                  ]
+                })
+              }, 180000);
+              o2 = extractJson(((js2 => (((js2.choices || [])[0] || {}).message || {}).content || ((js2.choices || [])[0] || {}).text || ''))(await res2.json()));
+            } catch (e) { if (String(e.message || '').indexOf('连不上') >= 0) throw e; }
+          }
+          if (!o2) { fail += sub.length; done += sub.length; continue; }
+          const arr2 = Array.isArray(o2) ? o2 : (o2.items || o2.data || []);
+          arr2.forEach((row, k) => {
+            const idx = Number(row && (row.i != null ? row.i : k));
+            const seg = sub[idx];
+            const tr = String((row && (row.tr || row.translation || row.text)) || '').trim();
+            if (seg && tr) { seg.tr = tr; ok++; }
+          });
+          done += sub.length;
+          lmProg('翻译中 ' + done + '/' + list.length + ' 段…', true);
+          renderSegs(); queueSave();
+        }
+        continue;
       }
       if (!out) { fail += batch.length; done += batch.length; continue; }
       const items = Array.isArray(out) ? out : (out.items || out.data || []);
@@ -1453,7 +1516,7 @@ function i18nPut(raw, out, lang) {
   i18nCache[lang][raw] = out;
 }
 function langSkip(el) {
-  return !el || !!el.closest('#aList,#itemList,#vCv,#bWrap,script,style,canvas,kbd,code,#projName,#btnLang,[data-no-i18n],#toast,#lmProg,#i18nProg,#aStat,#vStat,[contenteditable="true"],.seg');
+  return !el || !!el.closest('#aList,#itemList,#vCv,#bWrap,script,style,canvas,kbd,code,#projName,#btnLang,[data-no-i18n],#toast,#lmProg,#i18nProg,#aiMsgs,#aiFab,#aStat,#vStat,[contenteditable="true"],.seg');
 }
 function langBox(node, create) {
   let box = LANG_TRACK.get(node);
@@ -1535,7 +1598,8 @@ async function langTranslateBatch(list) {
   const body = {
     model: LM.model || 'default', temperature: 0, stream: false,
     messages: [
-      { role: 'system', content: '你是界面本地化翻译。把给定的界面文案逐条翻译成' + uiLangName(uiLang) + '，按钮和标签用简短名词短语，不要加句号、不要解释、不要合并或省略。只输出 JSON：{"items":[{"i":序号,"tr":"译文"}]}' },
+      { role: 'system', content: '你是界面本地化翻译。这是一款「音视频标注台」的界面文案（录音校对、视频画框打码、标注导出），逐条翻译成' + uiLangName(uiLang) +
+        '。要求：按钮用简短动宾或名词短语；同一条内保持一致术语（如 标注=annotation、段落=segment、打码=blur/mask、文稿=transcript）；保留 {x} 之类的占位符原样；不要加句号、不要解释、不要合并或省略任何一条。只输出 JSON：{"items":[{"i":序号,"tr":"译文"}]}' },
       { role: 'user', content: user }
     ]
   };
@@ -1584,20 +1648,30 @@ async function langPass() {
   try {
     do {
       langDirty = false;
-      const queue = langScan().slice(0, 96);
+      const queue = langScan().slice(0, 240);
       if (!queue.length) break;
       langPending = queue.length;
       i18nProg('AI 翻译界面 ' + done + '/' + (done + queue.length) + '（' + uiLabel(uiLang) + '）', 0, true);
-      for (let i = 0; i < queue.length; i += 12) {
+      // 先整批发一次（界面文案短，上下文越长术语越统一）；缺的再拆小批补
+      try {
+        langApplying = true;
+        langApply(queue, await langTranslateBatch(queue));
+      } catch (e) { /* 整批失败就走下面的分批 */ }
+      finally { langApplying = false; }
+      done = queue.filter(q => String(i18nLookup(q.raw, uiLang) || '').trim()).length;
+      i18nProg('AI 翻译界面 ' + done + '/' + queue.length + '（' + uiLabel(uiLang) + '）', done / queue.length, true);
+      const rest = queue.filter(q => !String(i18nLookup(q.raw, uiLang) || '').trim());
+      for (let i = 0; i < rest.length; i += 12) {
         if (job !== langJob || uiLang === 'zh') { i18nProg(''); return; }
-        const slice = queue.slice(i, i + 12);
+        const slice = rest.slice(i, i + 12);
         try {
           langApplying = true;
           langApply(slice, await langTranslateBatch(slice));
-          done += slice.length;
         } catch (e) { failed += slice.length; }
         finally { langApplying = false; }
-        i18nProg('AI 翻译界面 ' + (done + failed) + '/' + (done + failed + queue.length - i - slice.length) + '（' + uiLabel(uiLang) + '）', (i + slice.length) / queue.length, true);
+        const nowDone = queue.filter(q => String(i18nLookup(q.raw, uiLang) || '').trim()).length;
+        done = nowDone;
+        i18nProg('AI 翻译界面 ' + nowDone + '/' + queue.length + '（' + uiLabel(uiLang) + '）', Math.max(nowDone / queue.length, (i + slice.length) / rest.length * 0.9), true);
       }
       i18nSave();
       langPending = 0;
@@ -3362,6 +3436,199 @@ async function bootBundle() {
   requestAnimationFrame(tick);
 }
 
+/* ---------- AI 对话：可拖动的悬浮球 ---------- */
+const FAB_KEY = 'annotator.fab.v1';
+let aiHist = [], aiBusy = false;
+
+function aiSync() {
+  const fab = $('#aiFab'), live = fab && fab.querySelector('.live');
+  if (live) live.hidden = !LM.base;
+  const hint = $('#aiHint');
+  if (hint) hint.textContent = LM.base ? ('模型：' + (LM.model || '默认') + ' · ' + LM.base) : '还没连模型：点右上「模型」填地址（内网 HTTP 可用 SSH 或 Caddy 转发）';
+  if (fab) {
+    fab.classList.toggle('off', !LM.base);
+    fab.title = LM.base ? '和 AI 对话' : '和 AI 对话（还没连模型）';
+  }
+}
+function aiPlacePanel() {
+  const box = $('#aiChat'), fab = $('#aiFab');
+  if (!box || !fab) return;
+  const r = fab.getBoundingClientRect(), W = innerWidth, H = innerHeight;
+  const w = box.offsetWidth || 384, h = box.offsetHeight || 524;
+  let right = Math.max(10, Math.min(W - r.right - 24, W - w - 10));
+  let bottom = Math.max(10, H - r.top + 10);
+  if (bottom + h > H - 10) bottom = Math.max(10, H - h - 10);
+  box.style.left = 'auto'; box.style.top = 'auto';
+  box.style.right = right + 'px';
+  box.style.bottom = bottom + 'px';
+}
+function aiSay(role, text) {
+  const box = $('#aiMsgs');
+  const el = document.createElement('div');
+  el.className = 'aiMsg ' + role;
+  el.textContent = text || '';
+  box.appendChild(el);
+  box.scrollTop = box.scrollHeight;
+  return el;
+}
+function aiToggle(force) {
+  const box = $('#aiChat');
+  if (!box) return;
+  const open = force != null ? force : box.hidden;
+  if (open) {
+    box.hidden = false;
+    aiPlacePanel();
+    aiSync();
+    if (!aiHist.length) aiSay('bot', '我是这台标注台的助手：可以问打码怎么盖住整段、导出包给了谁、某句话怎么翻，也可以把文稿丢过来让我润色。对话只发给你自己配的那个模型。');
+    setTimeout(() => { const i = $('#aiIn'); if (i) i.focus(); }, 30);
+  } else box.hidden = true;
+}
+function aiNew() {
+  aiHist = [];
+  const box = $('#aiMsgs');
+  if (box) box.innerHTML = '';
+  aiToggle(true);
+}
+function aiPromptSys() {
+  let brief = '';
+  try {
+    const items = (P.items || []);
+    brief = '当前项目「' + (P.name || '未命名') + '」共 ' + items.length + ' 个条目：' +
+      items.slice(0, 6).map(it => (it.title || '') + '(' + ((it.segments || []).length) + ' 段)').join('、');
+  } catch (e) { }
+  return '你是一款纯前端「音视频标注台」里的助手，帮用户做录音校对、字幕翻译、视频打码和标注整理。用户数据只在他自己的浏览器和自建模型里。' +
+    (brief ? '（' + brief + '）' : '') + '回答用中文，简洁、可操作；不要编造界面上不存在的按钮或快捷键。';
+}
+async function aiSend() {
+  if (aiBusy) return;
+  const inp = $('#aiIn');
+  const text = ((inp && inp.value) || '').trim();
+  if (!text) return;
+  if (!LM.base) { toast('先在「模型」里连上服务，再和 AI 对话'); openLM(); return; }
+  inp.value = '';
+  inp.style.height = 'auto';
+  aiSay('me', text);
+  aiHist.push({ role: 'user', content: text });
+  aiBusy = true;
+  const send = $('#aiSend'); if (send) send.disabled = true;
+  const bubble = aiSay('bot', '');
+  const cur = document.createElement('span');
+  cur.className = 'cur';
+  bubble.appendChild(cur);
+  let acc = '';
+  const paint = () => {
+    bubble.textContent = acc;
+    bubble.appendChild(cur);
+    const b = $('#aiMsgs'); if (b) b.scrollTop = b.scrollHeight;
+  };
+  try {
+    const messages = [{ role: 'system', content: aiPromptSys() }].concat(aiHist.slice(-12));
+    const res = await lmFetch('/chat/completions', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: LM.model || 'default', temperature: 0.6, stream: true, messages })
+    }, 300000);
+    const ct = String((res.headers && res.headers.get('content-type')) || '');
+    if (ct.indexOf('event-stream') >= 0 && res.body && res.body.getReader) {
+      const rd = res.body.getReader(), dec = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const chunk = await rd.read();
+        if (chunk.done) break;
+        buf += dec.decode(chunk.value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          if (line.indexOf('data:') !== 0) continue;
+          const d = line.slice(5).trim();
+          if (!d || d === '[DONE]') continue;
+          try {
+            const j = JSON.parse(d);
+            const c0 = ((j.choices || [])[0] || {});
+            const t = (c0.delta && c0.delta.content) || '';
+            if (t) { acc += t; paint(); }
+          } catch (e) { }
+        }
+      }
+    } else {
+      const js = await res.json();
+      const c0 = ((js.choices || [])[0] || {});
+      acc = String((c0.message && c0.message.content) || c0.text || (js.message && js.message.content) || '').trim();
+    }
+    if (cur.parentNode) cur.remove();
+    if (!acc.trim()) { bubble.className = 'aiMsg err'; bubble.textContent = '模型没返回内容：换个模型，或看看服务端日志'; }
+    else { bubble.className = 'aiMsg bot'; bubble.textContent = acc; aiHist.push({ role: 'assistant', content: acc }); }
+  } catch (e) {
+    if (cur.parentNode) cur.remove();
+    bubble.className = 'aiMsg err';
+    bubble.textContent = String(e.message || e);
+  } finally {
+    aiBusy = false;
+    const b = $('#aiMsgs'); if (b) b.scrollTop = b.scrollHeight;
+    if (send) send.disabled = false;
+  }
+}
+function aiInit() {
+  const fab = $('#aiFab');
+  if (!fab) return;
+  try {
+    const p = JSON.parse(localStorage.getItem(FAB_KEY) || 'null');
+    if (p && isFinite(p.x) && isFinite(p.y)) {
+      fab.style.right = 'auto'; fab.style.bottom = 'auto';
+      fab.style.left = Math.min(Math.max(6, p.x), innerWidth - 56) + 'px';
+      fab.style.top = Math.min(Math.max(6, p.y), innerHeight - 56) + 'px';
+    }
+  } catch (e) { }
+  let dx = 0, dy = 0, ox = 0, oy = 0, moved = false, dragging = false;
+  fab.addEventListener('pointerdown', e => {
+    if (e.button != null && e.button !== 0) return;
+    const r = fab.getBoundingClientRect();
+    dragging = true; moved = false;
+    ox = e.clientX; oy = e.clientY; dx = r.left; dy = r.top;
+    fab.classList.add('drag');
+    try { fab.setPointerCapture(e.pointerId); } catch (err) { }
+  });
+  fab.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const mx = e.clientX - ox, my = e.clientY - oy;
+    if (!moved && Math.abs(mx) + Math.abs(my) > 4) moved = true;
+    if (!moved) return;
+    fab.style.right = 'auto'; fab.style.bottom = 'auto';
+    fab.style.left = Math.min(Math.max(6, dx + mx), innerWidth - 56) + 'px';
+    fab.style.top = Math.min(Math.max(6, dy + my), innerHeight - 56) + 'px';
+    const box = $('#aiChat');
+    if (box && !box.hidden) aiPlacePanel();
+  });
+  const end = () => {
+    if (!dragging) return;
+    dragging = false;
+    fab.classList.remove('drag');
+    const r = fab.getBoundingClientRect();
+    if (moved) {
+      try { localStorage.setItem(FAB_KEY, JSON.stringify({ x: Math.round(r.left), y: Math.round(r.top) })); } catch (e) { }
+    } else {
+      aiToggle();
+    }
+  };
+  fab.addEventListener('pointerup', end);
+  fab.addEventListener('pointercancel', () => { dragging = false; fab.classList.remove('drag'); });
+  const close = $('#aiClose'), nw = $('#aiNew'), send = $('#aiSend'), inp = $('#aiIn');
+  if (close) close.onclick = () => aiToggle(false);
+  if (nw) nw.onclick = aiNew;
+  if (send) send.onclick = aiSend;
+  if (inp) {
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); aiSend(); }
+    });
+    inp.addEventListener('input', () => {
+      inp.style.height = 'auto';
+      inp.style.height = Math.min(92, inp.scrollHeight) + 'px';
+    });
+  }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#aiChat').hidden) aiToggle(false); });
+  aiSync();
+}
+
 async function boot() {
   if (IS_BUNDLE) { await bootBundle(); return; }
   await Store.init();
@@ -3387,6 +3654,7 @@ async function boot() {
   if (Store.mode === 'ls') toast('当前环境不支持 IndexedDB：标注会自动保存，媒体需每次重新导入', 5000);
   if (!guideSeen()) setTimeout(() => guideShow(0), 900);
   startLangWatch();
+  aiInit();
   if (uiLang !== 'zh') setTimeout(langPass, 350);
 }
 
@@ -3400,8 +3668,9 @@ function startLangWatch() {
 }
 
 window.__ANNOTATOR__ = {
-  version: '1.3.6',
+  version: '1.4.0',
   mixedRisk, userOS, installCmd, lmFwdCmd, lmFwdToLocal, lmCaddyCmd, lmCaddyUse,
+  ai: { toggle: aiToggle, send: aiSend, newChat: aiNew, get hist() { return aiHist; }, say: aiSay },
   lm: { get config() { return LM; }, translateItem, transcribeItem, transcribeAndTranslate, test: lmTest, models: lmModels },
   i18n: { get lang() { return uiLang; }, get label() { return uiLabel(uiLang); }, get pending() { return pendingLang; }, setUILang, setCustomLang, follow: followBrowserLang, pass: langPass, dict: I18N_EN, cache: () => i18nCache },
   get project() { return P; },

@@ -25,7 +25,8 @@
 | 目录 | 连接本地目录后即时覆盖写入**唯一** `annotations.json`，并自动生成 `README.md` |
 | 只读包 | 导出独立 HTML（可内嵌媒体），对方双击即可看能播、但不改 |
 | 自带模型 | 可接本机 / 局域网的 OpenAI 兼容服务，做 AI 翻译与音频转写（可选） |
-| 界面语言 | 中文 / English / AI 翻译三档；中英内置词条，AI 档走已配置模型并缓存 |
+| AI 对话 | 右下角悬浮球，可拖到任意位置（记住位置），点开直接和模型聊，支持流式回复 |
+| 界面语言 | 中文 / English / AI 翻译三档；中英内置词条，AI 档一次整批发给模型并缓存 |
 
 ![视频划重点与打码](docs/video.png)
 
@@ -41,7 +42,8 @@
 
 点「测试连接」→ 保存，音频页就能用：
 
-- **AI 翻译 ▾**：把文稿原文翻成译文，回填译文栏（可只翻空译文、只翻 ★ 段）
+- **AI 翻译 ▾**：把文稿原文翻成译文，回填译文栏（可只翻空译文、只翻 ★ 段）。整篇一次发过去（≤40 段），模型有完整上下文、术语更统一；不成功才自动拆成 12 段重试
+- **AI 对话**：右下角悬浮球拖到顺手的位置，点开就是个聊天窗（Enter 发送），能问打码怎么盖、稿子怎么翻、导出包怎么给别人
 - **转写 ▾**：把音频转成文稿段落；其中**「转写并翻译」一次点击**就从录音拿到双语文稿
 - 转写需要 `/v1/audio/transcriptions`：`whisper.cpp server`、faster-whisper，或 llama-server 加载带音频编码器的模型（Qwen3-ASR / Voxtral / Qwen2-Audio，启动时要 `--mmproj`）
 - 转写服务可以和对话模型分开：面板里的「转写服务地址」留空则沿用主地址；两个服务不同端口时（如 8080 LLM / 8081 ASR）分别填
@@ -99,7 +101,7 @@
 ```bash
 npm start                 # 零依赖静态服务，默认 4180
 npm install && npx playwright install chromium
-npm test                  # 23 条端到端用例（含 mock 的 /v1 模型接口）
+npm test                  # 24 条端到端用例（含 mock 的 /v1 模型接口）
 ```
 
 推送 `dev` 会自动跑 CI（`.github/workflows/ci.yml`）并由 `pages.yml` 发布 Pages（Settings → Pages → Source 选 **GitHub Actions**）。

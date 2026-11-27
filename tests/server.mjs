@@ -55,6 +55,30 @@ async function fakeModel(req, res, path) {
       payload = JSON.parse(userMsg.content);
     } catch (e) { }
     const items = (Array.isArray(payload) ? payload : []).map((row, i) => ({ i, tr: 'MOCK:' + String(row.t || '').slice(0, 8) }));
+    // 普通聊天（非 JSON 数组的提问）：回一段文字；带 stream:true 就走 SSE，用来验证流式渲染
+    let plain = null;
+    try {
+      const body = JSON.parse(raw);
+      const userMsg = (body.messages || []).filter(m => m.role === 'user').pop();
+      const txt = String((userMsg && userMsg.content) || '');
+      let isArr = false;
+      try { isArr = Array.isArray(JSON.parse(txt)); } catch (e) { isArr = false; }
+      if (!isArr) plain = 'MOCK: 收到「' + txt.slice(0, 18) + '」，这是测试用的假回复。';
+      if (plain && body.stream) {
+        res.writeHead(200, Object.assign({ 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' }, CORS));
+        const parts = plain.match(/.{1,12}/g) || [plain];
+        for (const part of parts) {
+          res.write('data: ' + JSON.stringify({ choices: [{ index: 0, delta: { content: part } }] }) + '\n\n');
+        }
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return true;
+      }
+    } catch (e) { }
+    if (plain) {
+      json(res, 200, { id: 'mock', object: 'chat.completion', model: 'mock-llama', choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: plain } }] });
+      return true;
+    }
     json(res, 200, {
       id: 'mock', object: 'chat.completion', model: 'mock-llama',
       choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify({ items }) } }]
