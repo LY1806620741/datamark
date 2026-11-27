@@ -1391,7 +1391,13 @@ function bindLM() {
   if (RO) return;
   $('#btnModel').onclick = openLM;
   $('#lmClose').onclick = () => { $('#lmModal').hidden = true; };
-  $('#lmModal').onclick = e => { if (e.target.id === 'lmModal') $('#lmModal').hidden = true; };
+  /* 只有"按下和松开都落在遮罩上"才算点外部；从框里拖到框外松手不关窗 */
+  let lmDownOnOverlay = false;
+  $('#lmModal').addEventListener('pointerdown', e => { lmDownOnOverlay = (e.target.id === 'lmModal'); });
+  $('#lmModal').addEventListener('pointerup', e => {
+    if (lmDownOnOverlay && e.target.id === 'lmModal') $('#lmModal').hidden = true;
+    lmDownOnOverlay = false;
+  });
   $('#lmRefresh').onclick = async () => {
     readLmForm();
     if (!LM.base) { lmStatus('先填服务地址', 'err'); return; }
@@ -1655,34 +1661,91 @@ function langApply(todo, results) {
   });
 }
 
+function langRowTr(row) {
+  if (row == null) return '';
+  if (typeof row === 'string') return row.trim();
+  const keys = ['tr', 't', 'text', 'translation', 'zh', 'en', '译文', 'translated', 'value'];
+  for (const k of keys) if (row[k] != null && String(row[k]).trim()) return String(row[k]).trim();
+  /* 兼容 {"1":"译文"} 这类"序号当键"的偷懒格式 */
+  const ks = Object.keys(row).filter(k => row[k] != null && String(row[k]).trim());
+  if (ks.length === 1 && typeof row[ks[0]] === 'string') return String(row[ks[0]]).trim();
+  return '';
+}
+
+function langRowIdx(row, n) {
+  if (row && typeof row === 'object') {
+    for (const k of ['i', 'index', 'id', 'idx', 'no', 'n']) {
+      if (row[k] != null && isFinite(Number(row[k]))) return Number(row[k]);
+    }
+  }
+  return NaN;
+}
+/* 把模型各种跑偏的输出尽力映射回 list 的下标 */
+function langRowsToMap(txt, list) {
+  const map = new Map();
+  const put = (i, tr) => {
+    if (!isFinite(i) || i < 0 || i >= list.length) return;
+    const t = String(tr || '').trim();
+    if (!t || map.has(i)) return;
+    map.set(i, t);
+  };
+  /* 候选行：优先流式抠出来的，其次一次性 JSON 解析出的数组；纯字符串数组按顺序排 */
+  let rows = jsonItems(txt);
+  if (!rows.length) {
+    const obj = extractJson(txt);
+    const arr = Array.isArray(obj) ? obj : (obj && Array.isArray(obj.items) ? obj.items : (obj && Array.isArray(obj.t) ? obj.t : null));
+    if (Array.isArray(arr)) rows = arr.map(x => (typeof x === 'string' ? x : x));
+    else if (obj && !Array.isArray(obj)) rows = [obj];
+  }
+  const asPositional = rows.length && rows.every(x => typeof x === 'string');
+  if (asPositional) {
+    rows.forEach((t, i) => put(i, t));
+  } else {
+    /* 序号可能从 0 也可能从 1 开始：整体判断一次，不逐条猜 */
+    const nums = rows.map(r => langRowIdx(r, list.length)).filter(n => isFinite(n));
+    const oneBased = nums.length && Math.min.apply(null, nums) >= 1 && Math.max.apply(null, nums) >= list.length;
+    rows.forEach((r, k) => {
+      const n = langRowIdx(r, list.length);
+      put(oneBased && isFinite(n) ? n - 1 : (isFinite(n) ? n : k), langRowTr(r));
+    });
+  }
+  /* 还缺的：按纯文本行兜底，把译文和请求顺序对齐 */
+  if (map.size < list.length) {
+    const lines = String(txt).split('\n').map(x => x.replace(/^[\s\-\d.*"]+|["\s]+$/g, '')).filter(Boolean);
+    const cand = lines.filter(x => !/[{}[\]:]/.test(x));
+    if (cand.length >= list.length) list.forEach((it, i) => put(i, cand[i]));
+  }
+  return map;
+}
 async function langTranslateBatch(list) {
   const out = list.map(() => '');
-  const sys = '你是界面本地化翻译。这是一款「音视频标注台」的界面文案（录音校对、视频画框打码、标注导出），逐条翻译成' + uiLangName(uiLang) +
-    '。要求：按钮用简短动宾或名词短语；同一条内保持一致术语（如 标注=annotation、段落=segment、打码=blur/mask、文稿=transcript）；保留 {x} 之类的占位符原样；不要加句号、不要解释、不要合并或省略任何一条。只输出 JSON：{"items":[{"i":序号,"tr":"译文"}]}';
+  if (!list.length) return out;
+  const sys = '你是界面本地化翻译。这是一款「音视频标注台」的界面文案（录音校对、视频画框打码、标注导出）。逐条翻译成' + uiLangName(uiLang) +
+    '。按钮用简短名词短语；术语保持一致（标注=annotation、段落=segment、打码=blur、文稿=transcript）；保留 {x} 占位符；不加句号、不解释、不合并不省略。' +
+    '严格只输出 JSON，不要解释：{"items":[{"i":序号,"tr":"译文"}]}';
   const msgs = [
     { role: 'system', content: sys },
     { role: 'user', content: JSON.stringify(list.map((x, i) => ({ i, t: x.raw }))) }
   ];
-  /* 模型一边生成一边回填，界面就能看到逐条变化，而不是等全部结束 */
-  const take = (acc) => {
-    jsonItems(acc).forEach(row => {
-      const i = Number(row.i);
-      if (!isFinite(i) || i < 0 || i >= list.length || out[i]) return;
-      const tr = String(row.tr != null ? row.tr : (row.translation != null ? row.translation : '') || '').trim();
-      if (!tr) return;
+  const apply = (map) => {
+    map.forEach((tr, i) => {
+      if (out[i] || !tr) return;
       out[i] = tr;
       langApply([list[i]], [tr]);
     });
   };
-  const txt = await lmChatText(msgs, { stream: true, temperature: 0, timeout: 120000, onText: take });
-  const obj = extractJson(txt);
-  const arr = Array.isArray(obj) ? obj : (obj && (obj.items || obj.t)) || [];
-  arr.forEach(row => {
-    const i = Number(row && row.i);
-    if (!isFinite(i) || i < 0 || i >= list.length || out[i]) return;
-    const tr = String((row.tr != null ? row.tr : (row.translation != null ? row.translation : row.t)) || '').trim();
-    if (tr) { out[i] = tr; langApply([list[i]], [tr]); }
-  });
+  /* 边生成边回填：模型吐一条，界面上就换一条 */
+  const take = (acc) => {
+    const map = new Map();
+    jsonItems(acc).forEach(row => {
+      const i = langRowIdx(row, list.length);
+      const tr = langRowTr(row);
+      if (isFinite(i) && i >= 0 && i < list.length && tr) map.set(i, tr);
+    });
+    apply(map);
+  };
+  const txt = await lmChatText(msgs, { stream: true, temperature: 0, timeout: 60000, onText: take });
+  apply(langRowsToMap(txt, list));
   return out;
 }
 
@@ -1700,31 +1763,55 @@ async function langPass() {
   try {
     do {
       langDirty = false;
-      const queue = langScan().slice(0, 240);
+      const queue = langScan().slice(0, 320);
       if (!queue.length) break;
-      langPending = queue.length;
-      i18nProg('AI 翻译界面 ' + done + '/' + (done + queue.length) + '（' + uiLabel(uiLang) + '）', 0, true);
-      // 先整批发一次（界面文案短，上下文越长术语越统一）；缺的再拆小批补
-      try {
-        langApplying = true;
-        await langTranslateBatch(queue);
-      } catch (e) { /* 整批失败就走下面的分批 */ }
-      finally { langApplying = false; }
-      done = queue.filter(q => String(i18nLookup(q.raw, uiLang) || '').trim()).length;
-      i18nProg('AI 翻译界面 ' + done + '/' + queue.length + '（' + uiLabel(uiLang) + '）', done / queue.length, true);
-      const rest = queue.filter(q => !String(i18nLookup(q.raw, uiLang) || '').trim());
-      for (let i = 0; i < rest.length; i += 12) {
-        if (job !== langJob || uiLang === 'zh') { i18nProg(''); return; }
-        const slice = rest.slice(i, i + 12);
-        try {
-          langApplying = true;
-          await langTranslateBatch(slice);
-        } catch (e) { failed += slice.length; }
-        finally { langApplying = false; }
-        const nowDone = queue.filter(q => String(i18nLookup(q.raw, uiLang) || '').trim()).length;
-        done = nowDone;
-        i18nProg('AI 翻译界面 ' + nowDone + '/' + queue.length + '（' + uiLabel(uiLang) + '）', Math.max(nowDone / queue.length, (i + slice.length) / rest.length * 0.9), true);
+      const total = queue.length;
+      /* 先把正在屏幕里的文案排前面：第一批小、很快，用户马上看到界面变了 */
+      const inView = el => {
+        const n = el && el.nodeType === 3 ? el.parentElement : el;
+        if (!n || !n.getBoundingClientRect) return false;
+        const r = n.getBoundingClientRect();
+        return r.bottom > 0 && r.top < innerHeight && r.height > 0;
+      };
+      queue.sort((a, b) => (inView(a.node) ? 0 : 1) - (inView(b.node) ? 0 : 1));
+      langPending = total;
+      i18nProg('AI 翻译界面 0/' + total + '（' + uiLabel(uiLang) + '）', 0, true);
+
+      const countDone = () => queue.filter(q => String(i18nLookup(q.raw, uiLang) || '').trim()).length;
+      /* 小批 + 并发：单批 30 条，模型吐得动、也不容易截断；三个 batch 同时跑，首屏更快 */
+      const batches = [];
+      let first = true;
+      for (let i = 0; i < queue.length;) {
+        const size = first ? 12 : 30;
+        batches.push(queue.slice(i, i + size));
+        i += size;
+        first = false;
       }
+      let cursor = 0;
+      const worker = async () => {
+        while (job === langJob && uiLang !== 'zh') {
+          const idx = cursor++;
+          if (idx >= batches.length) return;
+          const batch = batches[idx];
+          langApplying = true;
+          try {
+            await langTranslateBatch(batch);
+          } catch (e) {
+            /* 整批失败就拆成更小的再试，失败只损失这一小撮，不影响其它批 */
+            try { await langTranslateBatch(batch.slice(0, 6)); } catch (e2) { }
+          } finally { langApplying = false; }
+          if (job !== langJob || uiLang === 'zh') return;
+          const n = countDone();
+          done = n;
+          failed = total - n;
+          i18nProg('AI 翻译界面 ' + n + '/' + total + '（' + uiLabel(uiLang) + '）', n / total, true);
+        }
+      };
+      const CONC = 3;
+      await Promise.all(Array.from({ length: Math.min(CONC, batches.length) }, worker));
+
+      done = countDone();
+      failed = total - done;
       i18nSave();
       langPending = 0;
       rounds++;
@@ -3583,7 +3670,11 @@ async function aiSend() {
   }, 500);
   const b0 = $('#aiMsgs'); if (b0) b0.scrollTop = b0.scrollHeight;
   const paint = () => {
-    if (think) { reasonEl.hidden = false; reasonEl.textContent = think; }
+    if (think) {
+      reasonEl.hidden = false;
+      reasonEl.textContent = think;
+      reasonEl.scrollTop = reasonEl.scrollHeight;          /* 思考过程跟着最新一行往下滚 */
+    }
     ansEl.textContent = acc;
     ansEl.appendChild(cur);
     const b = $('#aiMsgs'); if (b) b.scrollTop = b.scrollHeight;
@@ -3748,11 +3839,11 @@ function startLangWatch() {
 }
 
 window.__ANNOTATOR__ = {
-  version: '1.4.1',
+  version: '1.4.2',
   mixedRisk, userOS, installCmd, lmFwdCmd, lmFwdToLocal, lmCaddyCmd, lmCaddyUse,
   ai: { toggle: aiToggle, send: aiSend, newChat: aiNew, get hist() { return aiHist; }, say: aiSay },
   lm: { get config() { return LM; }, translateItem, transcribeItem, transcribeAndTranslate, test: lmTest, models: lmModels, jsonItems, chat: lmChatText },
-  i18n: { get lang() { return uiLang; }, get label() { return uiLabel(uiLang); }, get pending() { return pendingLang; }, setUILang, setCustomLang, follow: followBrowserLang, pass: langPass, dict: I18N_EN, cache: () => i18nCache },
+  i18n: { get lang() { return uiLang; }, get label() { return uiLabel(uiLang); }, get pending() { return pendingLang; }, setUILang, setCustomLang, follow: followBrowserLang, pass: langPass, dict: I18N_EN, cache: () => i18nCache, rows: langRowsToMap },
   get project() { return P; },
   isRO: () => RO,
   buildReadOnlyHTML,

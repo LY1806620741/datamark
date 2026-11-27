@@ -48,7 +48,7 @@
 | 单一数据文件 | 目录里只维护 `annotations.json`（+ 自动生成的 `README.md`），不产生每项一文件的碎片 |
 | 只读预览包 | 用"页面初始模板 + 内嵌 JSON + data URL 媒体"生成独立 HTML：`__BUNDLE__` 模式启动，隐藏全部编辑入口、字段只读、可播放可看标注 |
 | GitHub Pages | `pages.yml` 打包 `index.html` + 文档到 `_site` 后发布 |
-| GitHub Actions 测试 | `ci.yml` 跑 Playwright 端到端 26 条用例（含 mock 的 `/v1` 模型接口） |
+| GitHub Actions 测试 | `ci.yml` 跑 Playwright 端到端 28 条用例（含 mock 的 `/v1` 模型接口） |
 
 ## 三、验收标准
 
@@ -57,6 +57,7 @@
 - [x] 文稿修改、重点标记、译文刷新后仍在（IndexedDB）
 - [x] SRT / TXT / Markdown 导出内容正确
 - [x] 视频拖框生成区域，起止时间可改，截图可导出
+- [x] 界面翻译分批并发（首屏可见文案先翻）、输出跑偏也能对齐、思考区自动下滚、模型弹窗从框内拖到框外不关闭
 - [x] 对话与翻译边生成边回填：推理模型先出思考过程时，气泡已有内容；半截 JSON 也能先拿到已完成条目
 - [x] **打码像素级验证**：开关「显示标注」两帧差异像素应落在框内
 - [x] 目录连接后只出现 `README.md` + `annotations.json` 两个文件，编辑后内容即时更新

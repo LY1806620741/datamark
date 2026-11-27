@@ -636,3 +636,34 @@ test('AI 对话：推理模型先吐思考过程时，气泡在生成中就有�
   await expect(page.locator('.aiMsg.bot .aiAns').last()).toHaveText('好的，这是正文', { timeout: 10000 });
   await expect(reason).toContainText('先想一下');
 });
+
+test('界面翻译容错：模型输出跑偏时也能对齐回条目', async ({ page }) => {
+  await openApp(page);
+  const res = await page.evaluate(() => {
+    const f = window.__ANNOTATOR__.i18n.rows;
+    const list = ['a', 'b', 'c', 'd'].map(raw => ({ raw }));
+    return {
+      oneBased: [...f('[{"items":[{"i":1,"tr":"甲"},{"i":2,"tr":"乙"},{"i":3,"tr":"丙"},{"i":4,"tr":"丁"}]}]', list)].sort((a, b) => a[0] - b[0]),
+      plain: [...f('甲\n乙\n丙\n丁', list)].sort((a, b) => a[0] - b[0]),
+      keyAsIndex: [...f('{"items":[{"0":"甲"},{"1":"乙"},{"2":"丙"},{"3":"丁"}]}', list)].sort((a, b) => a[0] - b[0])
+    };
+  });
+  expect(res.oneBased.map(x => x[1])).toEqual(['甲', '乙', '丙', '丁']);
+  expect(res.plain.map(x => x[1])).toEqual(['甲', '乙', '丙', '丁']);
+  expect(res.keyAsIndex.map(x => x[1])).toEqual(['甲', '乙', '丙', '丁']);
+});
+
+test('模型面板：从框内拖到框外松手不会关掉弹窗', async ({ page }) => {
+  await openApp(page);
+  await page.locator('#btnModel').click();
+  await expect(page.locator('#lmModal')).toBeVisible();
+  const box = await page.locator('#lmModal .box').boundingBox();
+  await page.mouse.move(box.x + 40, box.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width + 120, box.y + box.height + 80, { steps: 6 });
+  await page.mouse.up();
+  await expect(page.locator('#lmModal')).toBeVisible();
+  // 真点遮罩外部：才关
+  await page.mouse.click(box.x - 30, box.y + 30);
+  await expect(page.locator('#lmModal')).toBeHidden();
+});
